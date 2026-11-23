@@ -793,11 +793,19 @@ document.addEventListener('submit',event=>{
     case 'weight': editDay().weight=number(data.get('weight'));break;
     case 'measures': editDay().measures=Object.fromEntries(measured.map((name,i)=>[name,number(data.get('measure-'+i))]));break;
     case 'new-client': {
-      if(account.role!=='admin') return;
+      if(account.role!=='admin'||form.dataset.saving==='true') return;
       const name=data.get('name').trim();
       if(!name) return notify('Escribe el nombre del cliente.');
+      const submit=form.querySelector('button[type=submit]');
       const item={id:crypto.randomUUID(),name,archived:false};
-      if(!persistClients([...clients,item])) return;
+      form.dataset.saving='true';
+      submit.disabled=true;
+      if(!persistClients([...clients,item])) {
+        delete form.dataset.saving;
+        submit.disabled=false;
+        return;
+      }
+      dialog.close();
       const previousPhotos=dbPromise;
       dbPromise=undefined;
       previousPhotos?.then(db=>db.close()).catch(()=>{});
@@ -809,7 +817,6 @@ document.addEventListener('submit',event=>{
       comparison='';
       page='Ficha';
       history.replaceState(null,'',clientLink(item.id,'Ficha'));
-      dialog.close();
       update('Ficha de '+name+' creada.');
       window.scrollTo(0,0);
       return;
@@ -931,7 +938,7 @@ document.addEventListener('click',async event=>{
     case 'sample-week':openSampleWeek(arg);break;
     case 'sample-period':openSampleWeek(arg,true);break;
     case 'new-client':
-      openDialog(`<form id="new-client" class="stack"><h2>Añadir cliente</h2><label>Nombre completo<input name="name" maxlength="140" required></label><div class="row">${action('Cancelar','close')}<button class="primary">Crear ficha</button></div></form>`);
+      openDialog(`<form id="new-client" class="stack"><h2>Añadir cliente</h2><label>Nombre completo<input name="name" maxlength="140" required></label><div class="row">${action('Cancelar','close')}<button class="primary" type="submit">Crear ficha</button></div></form>`);
       break;
     case 'archive-client':
       if(persistClients(clients.map(item=>item.id===arg?{...item,archived:!item.archived}:item))) render();
