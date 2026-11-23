@@ -1,12 +1,12 @@
 'use strict';
 
 const prefix = 'pulso-vital-shell-';
-const cacheName = prefix + '1';
+const cacheName = prefix + '2';
 const shell = new URL('./index.html', self.location.href);
 const assets = [shell, './manifest.webmanifest', './pulso-192.png', './pulso-512.png'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(assets)));
+  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(assets)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {

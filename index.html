@@ -168,11 +168,11 @@ try { account=accounts[sessionStorage.getItem(sessionKey)]; } catch {}
 
 let clients = [];
 try { clients = JSON.parse(localStorage.getItem(clientsKey)) || []; } catch {}
-const client = clients.find(item=>item.id===params.get('cliente'));
+let client = clients.find(item=>item.id===params.get('cliente'));
 const personalKey = demo ? 'mi-programa-demo-v1' : 'mi-programa-v1';
 const clientKey = id => clientsKey+':'+id;
 const photosKey = id => id ? clientKey(id)+':fotos' : demo?'mi-programa-fotos-demo':'mi-programa-fotos';
-const storageKey = client ? clientKey(client.id) : personalKey;
+let storageKey = client ? clientKey(client.id) : personalKey;
 let state = blank();
 try { state = {...state,...JSON.parse(localStorage.getItem(storageKey))}; } catch {}
 const dateKey = (date = new Date()) => [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
@@ -793,11 +793,25 @@ document.addEventListener('submit',event=>{
     case 'weight': editDay().weight=number(data.get('weight'));break;
     case 'measures': editDay().measures=Object.fromEntries(measured.map((name,i)=>[name,number(data.get('measure-'+i))]));break;
     case 'new-client': {
+      if(account.role!=='admin') return;
       const name=data.get('name').trim();
       if(!name) return notify('Escribe el nombre del cliente.');
       const item={id:crypto.randomUUID(),name,archived:false};
       if(!persistClients([...clients,item])) return;
-      location.href=clientLink(item.id,'Ficha');
+      const previousPhotos=dbPromise;
+      dbPromise=undefined;
+      previousPhotos?.then(db=>db.close()).catch(()=>{});
+      client=item;
+      storageKey=clientKey(item.id);
+      state=blank();
+      state.profile={name};
+      selected=dateKey();
+      comparison='';
+      page='Ficha';
+      history.replaceState(null,'',clientLink(item.id,'Ficha'));
+      dialog.close();
+      update('Ficha de '+name+' creada.');
+      window.scrollTo(0,0);
       return;
     }
     case 'profile': {
