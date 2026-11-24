@@ -110,6 +110,16 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
 @media(prefers-reduced-motion:reduce){button,[role=button],.button-link{transition:none}}
 @media(max-width:430px){.photo-gallery{grid-template-columns:1fr}}
 </style>
+<style>
+.series-summary{margin:.6rem 0;padding-left:1.25rem}.series-row button{margin-top:.65rem}.report-day{border-top:1px solid var(--line);padding:.6rem 0}.report-day h4{margin:.35rem 0}
+@media print{
+  body:has(#client-report-print){background:#fff;color:#111}
+  body:has(#client-report-print)>:not(dialog){display:none!important}
+  dialog:has(#client-report-print){position:static;display:block;width:auto;max-width:none;max-height:none;overflow:visible;margin:0;padding:0;border:0;color:#111}
+  dialog:has(#client-report-print)::backdrop{display:none}
+  .report-controls{display:none!important}.report-day h3,.report-day h4{break-after:avoid}
+}
+</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -410,9 +420,40 @@ function trainingSection() {
           <div class="fold-content"><p><strong>${sets} series de ${reps}</strong> · ${esc(warm)} · Descanso de ${restLabel(rest)}</p>
           <div class="row"><a class="button-link exercise-video" href="${esc(url)}" target="_blank" rel="noopener noreferrer">▶ Ver video</a>${action(done?'Desmarcar':'Marcar realizado','training',index)}${action(done?.alternative?'Editar ejercicio realizado':'Hice otro ejercicio','training-alternative',index)}</div>
           <div class="row meal-buttons">${action('Iniciar descanso','timer',index,'primary')}<output class="rest-clock" id="rest-${key}" aria-label="Tiempo de descanso" aria-live="off">${restLabel(restTime(key,rest))}</output></div>
+          <div class="row meal-buttons">${action(day(date).trainingSets?.[index]?.length?'Editar series y cargas':'Registrar series y cargas','training-sets',index)}</div>
+          ${seriesSummary(day(date).trainingSets?.[index])}
+          ${previousSeries(date,index)}
           ${done?.alternative?`<p>Ejercicio realizado: <strong>${esc(done.alternative)}</strong></p>`:''}</div></details>`;
       }).join('')}</div></details>`;
   }).join('')}</section>`;
+}
+function seriesSummary(sets) {
+  if(!sets?.length) return '';
+  return `<ul class="series-summary">${sets.map(set=>`<li>${set.kind==='warm'?'Calentamiento':'Serie de trabajo'} · ${set.reps==null?'Sin repeticiones anotadas':format(set.reps)+' rep.'} · ${set.weight==null?'Sin carga anotada':format(set.weight)+' '+(set.unit==='lb'?'lb':'kg')}</li>`).join('')}</ul>`;
+}
+function previousSeries(date,index) {
+  const previous=Object.keys(state.days).filter(key=>key<date && day(key).trainingSets?.[index]?.length).sort().at(-1);
+  return previous?`<details><summary>Comparar con la sesión del ${esc(pretty(previous))}</summary>${seriesSummary(day(previous).trainingSets[index])}</details>`:'';
+}
+function seriesRow(set={kind:'work',unit:'kg'}) {
+  return `<div class="empty series-row"><div class="fields">
+    <label>Tipo<select name="kind"><option value="warm" ${set.kind==='warm'?'selected':''}>Calentamiento</option><option value="work" ${set.kind==='work'?'selected':''}>Serie de trabajo</option></select></label>
+    <label>Repeticiones<input name="reps" type="number" min="1" max="999" step="1" value="${esc(set.reps)}"></label>
+    <label>Carga<input name="weight" type="number" min="0" max="9999" step="any" value="${esc(set.weight)}"></label>
+    <label>Unidad<select name="unit"><option value="kg" ${set.unit==='kg'?'selected':''}>kg</option><option value="lb" ${set.unit==='lb'?'selected':''}>lb</option></select></label>
+  </div>${action('Quitar serie','series-remove')}</div>`;
+}
+function showTrainingSets(index) {
+  const routine=routines[index];
+  if(!routine) return;
+  const date=trainingDate(index);
+  const saved=day(date).trainingSets?.[index];
+  const sets=saved?.length?saved:[{kind:'warm',unit:'kg'},...Array.from({length:routine[2]},()=>({kind:'work',unit:'kg'}))];
+  const exercise=day(date).training?.[index]?.alternative||routine[1];
+  openDialog(`<form id="training-sets" class="stack" data-index="${index}" data-date="${date}"><h2>Series y cargas · ${esc(exercise)}</h2>
+  <p>Deja las filas que no usaste en blanco. Puedes registrar kilos o libras en cada serie.</p>
+  <div class="stack" id="series-rows">${sets.map(seriesRow).join('')}</div>
+  <div class="row">${action('Añadir serie','series-add')}${action('Cancelar','close')}<button class="primary">Guardar series</button></div></form>`);
 }
 function tickRestTimers() {
   for(const [key,end] of restTimers) {
@@ -736,7 +777,8 @@ function clientRecord(id) {
 function hasClientActivity(entry) {
   return !!entry && (entry.weight!=null || entry.water!=null || !!entry.observation ||
     Object.keys(entry.entries||{}).length>0 || Object.values(entry.training||{}).some(Boolean) ||
-    Object.values(entry.measures||{}).some(value=>value!=null) || Object.keys(entry.reminderAnswers||{}).length>0);
+    Object.values(entry.measures||{}).some(value=>value!=null) || Object.keys(entry.reminderAnswers||{}).length>0 ||
+    Object.values(entry.trainingSets||{}).some(sets=>sets.length));
 }
 function openClientTracking(id, date) {
   if(account?.role!=='admin') return;
@@ -750,7 +792,7 @@ function openClientTracking(id, date) {
   const planned=days.filter(key=>record.week?.[key]).length;
   const logged=days.filter(key=>hasClientActivity(record.days?.[key])).length;
   openDialog(`<section class="stack"><h2>Seguimiento diario · ${esc(person.name)}</h2>
-    <div class="row">${action('Semana anterior','client-tracking',id+'|'+shift(first,-7))}${action('Semana siguiente','client-tracking',id+'|'+shift(first,7))}</div>
+    <div class="row">${action('Informe PDF','client-report',id+'|'+first,'primary')}${action('Semana anterior','client-tracking',id+'|'+shift(first,-7))}${action('Semana siguiente','client-tracking',id+'|'+shift(first,7))}</div>
     <p>${esc(pretty(first))} a ${esc(pretty(days[6]))}</p>
     <div class="empty"><strong>Ficha</strong><p>${missing.length?'Campos sin completar: '+esc(missing.join(', ')):'Datos principales registrados.'}</p><a href="${esc(clientLink(id,'Ficha'))}">Abrir ficha</a></div>
     <div class="empty"><strong>Programa</strong><p>${planned} de 7 días con menú elegido.</p><a href="${esc(clientLink(id,'Programa',first))}">Abrir programa</a></div>
@@ -769,6 +811,51 @@ function openClientTracking(id, date) {
     }).join('')}
     ${action('Cerrar','close')}
   </section>`);
+}
+function showClientReport(id,first) {
+  if(account?.role!=='admin') return;
+  const client=clients.find(item=>item.id===id);
+  if(!client) return;
+  openDialog(`<form id="client-report-form" data-id="${esc(id)}" class="stack"><h2>Informe individual · ${esc(client.name)}</h2>
+  <div class="fields"><label>Desde<input name="start" type="date" required value="${esc(first)}"></label>
+  <label>Hasta<input name="end" type="date" required value="${esc(shift(first,6))}"></label></div>
+  <div class="row">${action('Cancelar','close')}<button class="primary">Ver informe</button></div></form>`);
+}
+function clientReport(id,start,end) {
+  if(account?.role!=='admin') return;
+  const person=clients.find(item=>item.id===id);
+  if(!person) return;
+  const record=clientRecord(id);
+  const fields={born:'Fecha de nacimiento',height:'Estatura (cm)',sleep:'Sueño habitual (h)',objective:'Objetivo',habits:'Hábitos',health:'Condiciones y medicamentos reportados'};
+  const days=datesBetween(start,end);
+  const sections=days.map(key=>{
+    const entry=record.days?.[key]||{};
+    const total=intake(entry);
+    const nutrition=Object.entries(entry.entries||{}).map(([name,meal])=>`<li><strong>${esc(name)}</strong> · ${esc(meal.status)}${meal.items?.length?`<ul>${meal.items.map(item=>{
+      const kcal=calories(item);
+      return `<li>${esc(describe([item]))}${kcal==null?' · kcal sin calcular':' · '+format(kcal)+' kcal'}</li>`;
+    }).join('')}</ul>`:''}</li>`).join('');
+    const exercises=new Set([...Object.keys(entry.training||{}),...Object.keys(entry.trainingSets||{})]);
+    const workouts=[...exercises].map(index=>{
+      const performed=entry.training?.[index];
+      const sets=entry.trainingSets?.[index];
+      if(!performed&&!sets?.length) return '';
+      return `<li><strong>${esc(performed?.alternative||routines[index]?.[1]||'Ejercicio')}</strong> · ${performed?'Realizado':'Series registradas'}${seriesSummary(sets)}</li>`;
+    }).join('');
+    const measures=Object.entries(entry.measures||{}).filter(([,value])=>value!=null).map(([name,value])=>esc(name)+': '+format(value)+' cm').join(' · ');
+    return `<section class="report-day"><h3>${esc(pretty(key))}</h3>
+      <p>${record.week?.[key]?'Menú '+esc(record.week[key]):'Sin menú elegido'} · Peso: ${entry.weight==null?'—':format(entry.weight)+' kg'} · Agua: ${entry.water==null?'—':format(entry.water)+' ml'} · Ingesta: ${total.total==='—'?'—':total.total+' kcal'+(total.missing?' parciales':'')}</p>
+      ${nutrition?`<h4>Comidas</h4><ul>${nutrition}</ul>`:''}${workouts?`<h4>Entrenamiento</h4><ul>${workouts}</ul>`:''}
+      ${measures?`<p>Medidas: ${measures}</p>`:''}${entry.observation?`<p>Observación: ${esc(entry.observation)}</p>`:''}</section>`;
+  }).join('');
+  const notes=(record.notes||[]).filter(note=>note.date>=start&&note.date<=end);
+  openDialog(`<div id="client-report-print" class="stack"><div class="row report-controls">${action('Guardar PDF','report-print','','primary')}${action('Cerrar','close')}</div>
+    <article><h2>Pulso Vital · Informe individual</h2><p><strong>${esc(person.name)}</strong> · ${esc(start)} a ${esc(end)}</p>
+      <h3>Datos de la ficha</h3><ul>${Object.entries(fields).filter(([key])=>record.profile?.[key]).map(([key,label])=>`<li><strong>${label}:</strong> ${esc(record.profile[key])}</li>`).join('')}</ul>
+      <p>Las calorías corresponden a la ingesta registrada. El ejercicio se presenta por separado.</p>
+      ${sections}
+      ${notes.length?`<h3>Notas del asesor</h3><ul>${notes.map(note=>`<li>${esc(note.date)} · ${esc(note.type)} · ${esc(note.text)} ${esc(note.reason)}</li>`).join('')}</ul>`:''}
+    </article></div>`);
 }
 function clientRows() {
   const normal = text=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -1181,6 +1268,23 @@ document.addEventListener('submit',event=>{
       update(time?'Aviso diario de agua guardado para las '+time+'.':'Aviso diario de agua desactivado.');
       return;
     }
+    case 'training-sets': {
+      const sets=[...form.querySelectorAll('.series-row')].map(row=>({
+        kind:row.querySelector('[name=kind]').value,unit:row.querySelector('[name=unit]').value,
+        reps:number(row.querySelector('[name=reps]').value),weight:number(row.querySelector('[name=weight]').value)
+      })).filter(set=>set.reps!=null||set.weight!=null);
+      const record=editDay(form.dataset.date);
+      (record.trainingSets??={})[form.dataset.index]=sets;
+      dialog.close();
+      update('Series y cargas guardadas.');
+      return;
+    }
+    case 'client-report-form': {
+      const start=data.get('start'),end=data.get('end');
+      if(end<start) return notify('La fecha final debe ser igual o posterior a la inicial.');
+      clientReport(form.dataset.id,start,end);
+      return;
+    }
     case 'training-alternative': {
       const alternative=data.get('exercise').trim();
       if(!alternative) return notify('Escribe el ejercicio que hiciste.');
@@ -1248,6 +1352,8 @@ document.addEventListener('click',async event=>{
     case 'page':if(arg==='Clientes'&&account.role!=='admin') break;page=arg;render();break;
     case 'report-day':selected=arg;reportRange='day';render();window.scrollTo(0,0);break;
     case 'open-sample-day':selected=arg;page='Hoy';render();window.scrollTo(0,0);break;
+    case 'client-report':showClientReport(...arg.split('|'));break;
+    case 'report-print':if(account.role==='admin'&&dialog.querySelector('#client-report-print')) window.print();break;
     case 'client-tracking':openClientTracking(...arg.split('|'));break;
     case 'sample-week':openSampleWeek(arg);break;
     case 'sample-period':openSampleWeek(arg,true);break;
@@ -1374,6 +1480,9 @@ document.addEventListener('click',async event=>{
       try {await photoTransaction('readwrite',store=>store.delete(arg));render();notify('Foto quitada.');}
       catch {notify('No se pudo quitar la foto.');}
       break;
+    case 'training-sets':showTrainingSets(Number(arg));break;
+    case 'series-add':dialog.querySelector('#series-rows').insertAdjacentHTML('beforeend',seriesRow());break;
+    case 'series-remove':button.closest('.series-row').remove();break;
     case 'training-alternative': {
       const routine=routines[Number(arg)];
       if(!routine) break;
