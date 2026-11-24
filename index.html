@@ -409,7 +409,8 @@ function programme() {
     return `<div class="meal"><h3>${meal}</h3><p>${items?.length?esc(describe(items)):'Sin programar'}</p>${action(items?.length?'Editar comida':'Añadir comida','menu-template',choice+'|'+meal)}</div>`;
   }).join('')}</div></details>`).join('')}</section>
   ${assessedPlanCard()}
-  ${trainingSection()}`;
+  ${isTrialAccount()?trialProgrammeResources(state.trialAnswers||{}):''}
+  ${isTrialAccount()?`<details class="card"><summary>Ver rutina de gimnasio de ejemplo</summary>${trainingSection()}</details>`:trainingSection()}`;
 }
 function trainingDate(index) {
   const title=routines[index][0];
@@ -656,11 +657,43 @@ const bmiBands=[
   {upTo:Infinity,title:'Obesidad clase 3',short:'Clase 3',color:'#df88a3'}
 ];
 const bmiBand=value=>bmiBands.find(band=>value<band.upTo);
-const trialNeedsUpdate=state.trialAnswers?.completed && !state.trialAnswers.firstChange;
-let trialStep=state.trialProgress ?? (trialNeedsUpdate?trialQuestions.findIndex(question=>question.key==='walk'):0);
-let trialEditing=trialStep>0;
+let trialStep=state.trialProgress ?? 0;
+let trialEditing=!!state.trialDraft;
+let showTrialResult=false;
 function isTrialAccount() {
   return account?.role==='client' && client?.enrollment?.type?.startsWith('trial-');
+}
+function trialAccess() {
+  const enrollment=client?.enrollment;
+  const end=enrollmentEnd(enrollment);
+  const today=dateKey();
+  return !!end && today>=enrollment.start && today<end;
+}
+function trialTestOnly() {
+  return isTrialAccount() && (!state.trialAnswers?.completed || !trialAccess() || trialEditing || showTrialResult);
+}
+function trialAccessText() {
+  if(!isTrialAccount()) return '';
+  const enrollment=client.enrollment;
+  const type=enrollmentTypes[enrollment.type];
+  const today=dateKey();
+  const end=enrollmentEnd(enrollment);
+  if(today<enrollment.start) return 'La prueba comienza el '+pretty(enrollment.start)+'.';
+  if(today>=end) return 'La prueba terminó el '+pretty(shift(end,-1))+'.';
+  const day=datesBetween(enrollment.start,today).length;
+  return 'Día '+day+' de '+type.days+' · Hasta '+pretty(shift(end,-1));
+}
+function trialProgrammeResources(answers) {
+  const home=answers.activity==='En casa';
+  const mobility=answers.limit&&answers.limit!=='Ninguna dificultad'&&answers.limit!=='Prefiero conversarlo con el asesor';
+  const resource=home||mobility
+    ? ['Videos de fuerza y flexibilidad · NHS','https://www.nhs.uk/live-well/exercise/strength-and-flex-exercise-plan-how-to-videos/']
+    : ['Videos de actividad en casa · NHS','https://www.nhs.uk/better-health/get-active/home-workout-videos/'];
+  return `<section class="card ui-card accent-purple"><h2>Tu programa de prueba</h2><p>${esc(trialAccessText())}</p>
+    <p>Elige un menú de ejemplo en Programa. Podrás ver sus ingredientes y cantidades en gramos y probar el registro diario de comidas, agua, peso y ejercicio.</p>
+    ${state.assessedPlan?.date?'':`<p>Tu asesor puede publicar indicaciones y videos revisados para ti. Mientras tanto, el menú y la rutina son ejemplos para conocer la app.</p>`}
+    <p>${mobility||answers.healthContext?'Comentaste una condición o limitación. Revisa con un profesional si una actividad te conviene antes de practicarla.':'Puedes consultar un recurso de actividad y comentarlo con tu asesor.'}</p>
+    <a href="${resource[1]}" target="_blank" rel="noopener noreferrer">${resource[0]}</a></section>`;
 }
 function trialResult(answers) {
   const kg=Number(answers.weight)*(answers.unit==='lb'?.45359237:1);
@@ -689,7 +722,8 @@ function trialResult(answers) {
       ]).filter(([,value])=>value).map(([label,value])=>`<li><strong>${label}:</strong> ${esc(value)}</li>`).join('')}</ul></section>
     </div><section class="empty"><h3>Tu punto de partida</h3><p>Elegiste empezar por <strong>${esc(answers.firstChange.toLocaleLowerCase('es-EC'))}</strong>. En la revisión con tu asesor, pueden acordar un primer paso que encaje con tus horarios, gustos y limitaciones.</p></section>`:''}
     <p class="muted">Puedes compartir este resumen con tu asesor para revisar qué opciones se adaptan a ti.</p>
-    <div class="row">${isTrialAccount()?action('Revisar mis respuestas','trial-restart') : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
+    ${isTrialAccount()?`<p class="pill">${esc(trialAccessText())}</p>`:''}
+    <div class="row">${isTrialAccount()?((trialAccess()?action('Empezar','trial-enter','','primary')+action('Ver mi programa','trial-open-program'):'')+action('Repetir test','trial-restart')) : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
   </section>`;
 }
 function parseTrialHeight(input) {
@@ -712,8 +746,8 @@ function trialMultiField(question,answers) {
   </fieldset><label>Otro (opcional)<input name="answer" maxlength="180" placeholder="${esc(question.placeholder)}" value="${esc(other)}"></label>`;
 }
 function trialView() {
-  const answers=state.trialAnswers||{};
-  if(answers.completed&&answers.firstChange&&!trialEditing) return trialResult(answers);
+  const answers=state.trialDraft||state.trialAnswers||{};
+  if(state.trialAnswers?.completed && !trialEditing) return trialResult(state.trialAnswers)+trialProgrammeResources(state.trialAnswers);
   const question=trialQuestions[trialStep];
   const value=answers[question.key];
   const control=question.kind==='multi'
@@ -759,9 +793,10 @@ function assessedPlanCard(edit=false) {
   const plan=state.assessedPlan||{};
   const fields={food:'Alimentación y porciones en gramos',drinks:'Bebidas y alimentos que conviene limitar según la indicación recibida',movement:'Actividad indicada, alternativas y ejercicios que se deben evitar'};
   if(edit) return `<section class="card ui-card accent-amber"><form id="assessed-plan" class="stack"><h2>Orientaciones del programa</h2><p>Transcribe las indicaciones revisadas por el profesional para este cliente.</p>
-    ${Object.entries(fields).map(([key,label])=>dictationField(label,`<textarea name="${key}" rows="2" maxlength="2000">${esc(plan[key])}</textarea>`)).join('')}<button class="primary">Guardar orientaciones en Programa</button></form></section>`;
+    ${Object.entries(fields).map(([key,label])=>dictationField(label,`<textarea name="${key}" rows="2" maxlength="2000">${esc(plan[key])}</textarea>`)).join('')}<label>Enlace de video revisado (opcional)<input name="video" type="url" maxlength="600" value="${esc(plan.video)}"></label><button class="primary">Guardar orientaciones en Programa</button></form></section>`;
   if(!plan.date) return '';
-  return `<section class="card ui-card accent-amber"><h2>Orientaciones de mi programa</h2>${Object.entries(fields).filter(([key])=>plan[key]).map(([key,label])=>`<h3>${label}</h3><p class="assessment-text">${esc(plan[key])}</p>`).join('')}</section>`;
+  return `<section class="card ui-card accent-amber"><h2>Orientaciones de mi programa</h2>${Object.entries(fields).filter(([key])=>plan[key]).map(([key,label])=>`<h3>${label}</h3><p class="assessment-text">${esc(plan[key])}</p>`).join('')}
+  ${plan.video?.startsWith('https://')?`<a href="${esc(plan.video)}" target="_blank" rel="noopener noreferrer">Ver video indicado por mi asesor</a>`:''}</section>`;
 }
 function profile() {
   const fields = {'name':'Nombre','born':'Fecha de nacimiento','height':'Estatura (cm)','sleep':'Horas de sueño','objective':'Objetivo y motivación','health':'Condiciones y medicamentos reportados','habits':'Comidas habituales, snacks y obstáculos'};
@@ -769,7 +804,7 @@ function profile() {
   <div class="fields">${Object.entries(fields).map(([key,label])=>['objective','health','habits'].includes(key)
     ? dictationField(label,`<textarea name="${key}" rows="3">${esc(state.profile[key])}</textarea>`)
     : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
-  ${assessmentCard()}
+  ${isTrialAccount()?`<section class="card"><h2>Test de prueba</h2><p>${esc(trialAccessText())}</p>${action('Ver resultado del test','trial-show-result')}</section>`:assessmentCard()}
   ${account?.role==='admin'&&state.trialAnswers?.completed?trialResult(state.trialAnswers):''}
   ${account?.role==='admin'?assessedPlanCard(true)+advisorNotes():''}
   <section class="card ui-card accent-purple"><form id="late-checks" class="stack"><h2>Aviso de registros pendientes</h2>
@@ -1145,7 +1180,7 @@ function render() {
     activeDictation.recognition.abort();
     activeDictation=undefined;
   }
-  if(isTrialAccount()) {
+  if(trialTestOnly()) {
     nav.hidden=true;
     mobileNav.hidden=true;
     main.dataset.page='Test';
@@ -1409,7 +1444,7 @@ document.addEventListener('submit',event=>{
     handleAccessForm(form,data);
     return;
   }
-  if(!account || (isTrialAccount() && form.id!=='trial-step')) return;
+  if(!account || (trialTestOnly() && form.id!=='trial-step')) return;
   switch(form.id) {
     case 'voice-preview': return speak(data.get('message'));
     case 'day-observation':
@@ -1460,13 +1495,16 @@ document.addEventListener('submit',event=>{
       if(question.kind==='height'&&!(value>=30&&value<=300)) return notify('Revisa la estatura. Por ejemplo, escribe 180, 1,80 o 1 metro 80.');
       const unit=data.get('unit');
       if(question.kind==='weight'&&value*(unit==='lb'?.45359237:1)>700) return notify('Revisa el peso y la unidad ingresados.');
-      const answers=(state.trialAnswers??={});
+      const answers=state.trialDraft??(state.trialAnswers??={});
       answers[question.key]=value;
       if(chosen) (answers.multiple??={})[question.key]={choices:chosen,other:input.trim()};
       if(question.kind==='weight') answers.unit=unit;
       if(trialStep===trialQuestions.length-1) {
         answers.completed=dateKey();
+        state.trialAnswers=answers;
+        delete state.trialDraft;
         trialEditing=false;
+        showTrialResult=true;
         delete state.trialProgress;
       } else {
         trialStep++;
@@ -1498,7 +1536,9 @@ document.addEventListener('submit',event=>{
     }
     case 'assessed-plan':
       if(account.role!=='admin') return;
-      state.assessedPlan={...Object.fromEntries(data),date:dateKey()};
+      const guidance=Object.fromEntries(data);
+      if(guidance.video&&!guidance.video.startsWith('https://')) return notify('Usa un enlace de video que empiece por https://.');
+      state.assessedPlan={...guidance,date:dateKey()};
       update('Orientaciones disponibles en Programa.');
       return;
     case 'profile': {
@@ -1645,10 +1685,30 @@ document.addEventListener('click',async event=>{
     button.setAttribute('aria-pressed',String(visible));
     return;
   }
-  if(!account || (isTrialAccount()&&!['logout','logout-confirm','close','trial-back','trial-restart'].includes(command))) return;
+  if(!account || (trialTestOnly()&&!['logout','logout-confirm','close','trial-back','trial-restart','trial-open-program','trial-enter'].includes(command))) return;
   switch(command) {
     case 'trial-back':trialStep=Math.max(0,trialStep-1);render();break;
-    case 'trial-restart':trialStep=0;trialEditing=true;render();break;
+    case 'trial-restart':
+      if(!isTrialAccount()) break;
+      state.trialDraft={};
+      state.trialProgress=0;
+      trialStep=0;
+      trialEditing=true;
+      save();
+      render();
+      break;
+    case 'trial-show-result':
+      if(isTrialAccount()&&state.trialAnswers?.completed) {showTrialResult=true;render();window.scrollTo(0,0);}
+      break;
+    case 'trial-enter':
+    case 'trial-open-program':
+      if(isTrialAccount()&&trialAccess()&&state.trialAnswers?.completed) {
+        showTrialResult=false;
+        page=command==='trial-enter'?'Hoy':'Programa';
+        render();
+        window.scrollTo(0,0);
+      }
+      break;
     case 'logout':
       openDialog(`<section class="stack"><h2>¿Estás seguro de salir?</h2><div class="row">
         <button type="button" data-action="close" autofocus>No, continuar</button>
@@ -1903,7 +1963,7 @@ function waterIntervalMatches(rule,time) {
 function checkReminders(){
   const now=new Date();
   const time=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  if (!account || isTrialAccount() || dialog.open || !intro.hidden) return;
+  if (!account || trialTestOnly() || dialog.open || !intro.hidden) return;
   const key=dateKey(now);
   const daily=state.dailyReminders?.find(item=>item.time===time && item.lastShown!==key);
   if (daily) {
