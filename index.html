@@ -229,7 +229,8 @@ let renderVersion = 0;
 const day = (key = selected) => state.days[key] ?? {};
 const editDay = (key = selected) => state.days[key] ??= {};
 const menuChoice = (key = selected) => state.week[key] || '';
-const plan = (key = selected) => menus[menuChoice(key)] || {};
+const menuTemplate = choice => Object.fromEntries(Object.entries({...menus[choice],...state.menuTemplates?.[choice]}).filter(([,items])=>items?.length));
+const plan = (key = selected) => menuTemplate(menuChoice(key));
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const number = value => value === '' || value == null ? null : Number(value);
 const format = value => new Intl.NumberFormat('es-EC',{maximumFractionDigits:1}).format(value);
@@ -320,6 +321,11 @@ function programme() {
     const key=shift(first,i);
     return `<label>${esc(pretty(key))}<select data-menu-date="${key}">${menuOptions(menuChoice(key))}</select></label>`;
   }).join('')}</div></div>
+  <section class="card"><h2>Editar menús A, B, C y D</h2><p class="muted">Cambia las comidas que se ofrecen al elegir cada opción. Los registros de lo que ya comiste conservan sus cantidades y calorías.</p>
+  ${Object.keys(menus).map(choice=>`<details><summary>Menú ${choice}</summary>${Object.keys(meals).map(meal=>{
+    const items=menuTemplate(choice)[meal];
+    return `<div class="meal"><h3>${meal}</h3><p>${items?.length?esc(describe(items)):'Sin programar'}</p>${action(items?.length?'Editar comida':'Añadir comida','menu-template',choice+'|'+meal)}</div>`;
+  }).join('')}</details>`).join('')}</section>
   ${trainingSection()}`;
 }
 function trainingDate(index) {
@@ -757,16 +763,73 @@ function dictate(button) {
     notify('No se pudo activar el micrófono. Puedes usar el dictado del teclado.');
   }
 }
+const foodKey = name => name.trim().toLocaleLowerCase('es-EC');
+function savedFoods() {
+  const items=new Map();
+  const add=(name,density)=>{
+    const key=foodKey(name);
+    if(!key) return;
+    const previous=items.get(key);
+    items.set(key,{name,density:density??previous?.density??null});
+  };
+  Object.entries(catalogue).forEach(([name,density])=>add(name,density));
+  Object.values(menus).forEach(menu=>Object.values(menu).flat().forEach(item=>add(item.name,item.density)));
+  Object.keys(state.days).sort().forEach(key=>Object.values(day(key).entries||{}).forEach(entry=>(entry.items||[]).forEach(item=>add(item.name,item.density))));
+  Object.values(state.savedFoods||{}).forEach(item=>add(item.name,item.density));
+  return items;
+}
+function rememberFoods(items) {
+  const previous=savedFoods();
+  const next={...state.savedFoods};
+  for(const item of items) {
+    const key=foodKey(item.name);
+    const density=item.density??previous.get(key)?.density??null;
+    Object.defineProperty(next,key,{value:{name:item.name,density},enumerable:true,configurable:true,writable:true});
+    previous.set(key,{name:item.name,density});
+  }
+  state.savedFoods=next;
+}
+function foodChoices() {
+  return [...savedFoods().values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+}
+function editorItems(form) {
+  return [...form.querySelectorAll('.food')].map(row=>{
+    const name=row.querySelector('[data-name]').value.trim();
+    const grams=number(row.querySelector('[data-grams]').value);
+    const density=number(row.querySelector('[data-density]').value);
+    const original=grams==null&&name===row.dataset.originalName?JSON.parse(row.dataset.portion||'{}'):{};
+    return {name,grams,density,...original};
+  }).filter(item=>item.name);
+}
+function menuTemplateDialog(choice,meal) {
+  if(!Object.hasOwn(menus,choice)||!Object.hasOwn(meals,meal)) return;
+  const items=menuTemplate(choice)[meal]||[food('',null)];
+  openDialog(`<form id="menu-template-form" class="stack" data-choice="${choice}" data-meal="${esc(meal)}"><h2>Menú ${choice} · ${esc(meal)}</h2>
+  <p>Elige un alimento guardado o escribe uno nuevo. Introduce los gramos y las kcal por 100 g si las conoces.</p>
+  <div id="items" class="stack">${items.map(foodRow).join('')}</div>
+  <div class="row">${action('Añadir ingrediente','ingredient')}${action('Quitar esta comida del menú','menu-template-remove')}</div>
+  <div class="row">${action('Cancelar','close')}<button class="primary">Guardar menú</button></div></form>`);
+}
+function saveMenuTemplate(choice,meal,items) {
+  ((state.menuTemplates??={})[choice]??={})[meal]=items.length?items:null;
+  rememberFoods(items);
+  dialog.close();
+  update('Menú '+choice+' actualizado.');
+}
 function mealDialog(name) {
   const previous = day().entries?.[name];
   const items = previous?.items?.length ? previous.items : plan()[name] || [food('',null)];
   openDialog(`<form id="meal-form" class="stack" data-meal="${esc(name)}"><h2>${esc(name)}</h2><p>Registra lo que realmente comiste. Completa las kcal por 100 g con el envase si conoces el dato.</p>
-  <datalist id="foods">${Object.keys(catalogue).map(item=>`<option value="${esc(item)}"></option>`).join('')}</datalist>
   <div id="items" class="stack">${items.map(foodRow).join('')}</div>
   <div class="row">${action('Añadir ingrediente','ingredient')}${action('Omití esta comida','skip',name)}</div><div class="row">${action('Cerrar','close')}<button class="primary">Guardar lo que comí</button></div></form>`);
 }
 function foodRow(item) {
-  return `<div class="food empty stack"><label>Alimento<input data-name list="foods" value="${esc(item.name)}"></label><div class="fields"><label>Gramos<input data-grams type="number" min="0" max="10000" step="0.1" value="${esc(item.grams)}"></label><label>kcal por 100 g<input data-density type="number" min="0" max="900" step="0.1" value="${esc(item.density)}"></label></div>${action('Quitar ingrediente','remove')}</div>`;
+  const {portion,spoken}=item;
+  return `<div class="food empty stack" data-original-name="${esc(item.name)}" data-portion="${esc(JSON.stringify({portion,spoken}))}">
+  <label>Elegir alimento guardado<select data-food-pick><option value="">Seleccionar de la lista</option>${foodChoices().map(saved=>`<option value="${esc(saved.name)}" ${saved.name===item.name?'selected':''}>${esc(saved.name)}</option>`).join('')}</select></label>
+  <label>Nombre del alimento<input data-name value="${esc(item.name)}"></label>
+  <div class="fields"><label>Gramos<input data-grams type="number" min="0" max="10000" step="0.1" value="${esc(item.grams)}"></label><label>kcal por 100 g<input data-density type="number" min="0" max="900" step="0.1" value="${esc(item.density)}"></label></div>
+  ${portion?`<small>Porción del menú: ${esc(portion)}</small>`:''}${action('Quitar ingrediente','remove')}</div>`;
 }
 function recordMeal(name,status,items) {
   (editDay().entries ??= {})[name] = {status,items};
@@ -828,7 +891,13 @@ document.addEventListener('change',async event=>{
   if(el.matches('#meal-reminder select[name="meal"]')) el.form.elements.time.value=el.selectedOptions[0].dataset.time;
   if(el.id==='comparison') {comparison=el.value;render();}
   if(el.id==='menu'||el.dataset.menuDate) {state.week[el.dataset.menuDate || selected]=el.value;update('Menú actualizado.');}
-  if(el.matches('[data-name]')) el.closest('.food').querySelector('[data-density]').value=catalogue[el.value] ?? '';
+  if(el.matches('[data-food-pick], [data-name]')) {
+    const row=el.closest('.food');
+    if(el.matches('[data-food-pick]') && !el.value) return;
+    if(el.matches('[data-food-pick]')) row.querySelector('[data-name]').value=el.value;
+    else row.querySelector('[data-food-pick]').value=savedFoods().get(foodKey(el.value))?.name||'';
+    row.querySelector('[data-density]').value=savedFoods().get(foodKey(el.value))?.density??'';
+  }
   if(el.dataset.pose && el.files.length) {
     const file=el.files[0];
     const key=selected+':'+el.dataset.pose;
@@ -971,9 +1040,12 @@ document.addEventListener('submit',event=>{
       break;
     }
     case 'water-form':editDay().water=number(data.get('water'));dialog.close();break;
+    case 'menu-template-form':
     case 'meal-form': {
-      const items=[...form.querySelectorAll('.food')].map(row=>({name:row.querySelector('[data-name]').value.trim(),grams:number(row.querySelector('[data-grams]').value),density:number(row.querySelector('[data-density]').value)})).filter(item=>item.name);
-      if(!items.length) return notify('Añade un alimento o marca la comida como omitida.');
+      const items=editorItems(form);
+      if(!items.length) return notify('Añade al menos un alimento antes de guardar.');
+      if(form.id==='menu-template-form') return saveMenuTemplate(form.dataset.choice,form.dataset.meal,items);
+      rememberFoods(items);
       return recordMeal(form.dataset.meal,'Comí otra cosa',items);
     }
     default: return;
@@ -1120,6 +1192,12 @@ document.addEventListener('click',async event=>{
     case 'confirm':recordMeal(arg,'Comí lo planeado',plan()[arg]);break;
     case 'skip':recordMeal(arg,'Omitida',[]);break;
     case 'close':dialog.close();break;
+    case 'menu-template':menuTemplateDialog(...arg.split('|'));break;
+    case 'menu-template-remove': {
+      const form=dialog.querySelector('#menu-template-form');
+      if(form) saveMenuTemplate(form.dataset.choice,form.dataset.meal,[]);
+      break;
+    }
     case 'ingredient':dialog.querySelector('#items').insertAdjacentHTML('beforeend',foodRow(food('',null)));break;
     case 'remove':button.closest('.food').remove();break;
     case 'remove-photo':
