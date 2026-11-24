@@ -655,19 +655,60 @@ async function handleAccessForm(form,data) {
   } catch {feedback(form.id==='client-access'?'No se pudo guardar el acceso en este navegador.':'No se pudo completar el acceso en este navegador.');}
   finally {if(submit) submit.disabled=false;}
 }
+function clientRecord(id) {
+  try {return JSON.parse(localStorage.getItem(clientKey(id)))||{};}
+  catch {return {};}
+}
+function hasClientActivity(entry) {
+  return !!entry && (entry.weight!=null || entry.water!=null || !!entry.observation ||
+    Object.keys(entry.entries||{}).length>0 || Object.values(entry.training||{}).some(Boolean) ||
+    Object.values(entry.measures||{}).some(value=>value!=null) || Object.keys(entry.reminderAnswers||{}).length>0);
+}
+function openClientTracking(id, date) {
+  if(account?.role!=='admin') return;
+  const person=clients.find(item=>item.id===id);
+  if(!person) return;
+  const record=clientRecord(id);
+  const first=monday(date||person.reportDate||dateKey());
+  const days=datesBetween(first,shift(first,6));
+  const fields={born:'Fecha de nacimiento',height:'Estatura',sleep:'Sueño',objective:'Objetivo',habits:'Comidas habituales',health:'Condiciones y medicamentos'};
+  const missing=Object.entries(fields).filter(([key])=>!String(record.profile?.[key]??'').trim()).map(([,label])=>label);
+  const planned=days.filter(key=>record.week?.[key]).length;
+  const logged=days.filter(key=>hasClientActivity(record.days?.[key])).length;
+  openDialog(`<section class="stack"><h2>Seguimiento diario · ${esc(person.name)}</h2>
+    <div class="row">${action('Semana anterior','client-tracking',id+'|'+shift(first,-7))}${action('Semana siguiente','client-tracking',id+'|'+shift(first,7))}</div>
+    <p>${esc(pretty(first))} a ${esc(pretty(days[6]))}</p>
+    <div class="empty"><strong>Ficha</strong><p>${missing.length?'Campos sin completar: '+esc(missing.join(', ')):'Datos principales registrados.'}</p><a href="${esc(clientLink(id,'Ficha'))}">Abrir ficha</a></div>
+    <div class="empty"><strong>Programa</strong><p>${planned} de 7 días con menú elegido.</p><a href="${esc(clientLink(id,'Programa',first))}">Abrir programa</a></div>
+    <div class="empty"><strong>Progreso</strong><p>${logged} de 7 días con actividad registrada.</p><a href="${esc(clientLink(id,'Progreso',first))}">Ver gráfico, medidas y fotos</a></div>
+    ${days.map(key=>{
+      const entry=record.days?.[key]||{};
+      const complete=Object.values(entry.entries||{}).filter(meal=>meal.items?.length).length;
+      const skipped=Object.values(entry.entries||{}).filter(meal=>meal.status==='Omitida').length;
+      const training=Object.values(entry.training||{}).filter(Boolean).length;
+      const measures=Object.values(entry.measures||{}).filter(value=>value!=null).length;
+      return `<article class="meal"><h3>${esc(pretty(key))}</h3>
+        <p>${record.week?.[key]?'Menú '+esc(record.week[key]):'Sin menú elegido'} · ${hasClientActivity(entry)?'Con registros':'Sin registros'}</p>
+        ${hasClientActivity(entry)?`<small>${entry.weight!=null?format(entry.weight)+' kg':'Sin pesaje'} · ${entry.water!=null?format(entry.water)+' ml':'Sin agua registrada'} · ${complete} comida(s) · ${skipped} omitida(s) · ${training} ejercicio(s) · ${measures} medida(s)</small>`:''}
+        ${entry.observation?`<p>${esc(entry.observation)}</p>`:''}
+        <div><a href="${esc(clientLink(id,'Hoy',key))}">Abrir este día</a></div></article>`;
+    }).join('')}
+    ${action('Cerrar','close')}
+  </section>`);
+}
 function clientRows() {
   const normal = text=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const matches=[...clients].filter(item=>normal(item.name).includes(normal(clientFilter.trim())))
     .sort((a,b)=>Number(!!a.archived)-Number(!!b.archived)||a.name.localeCompare(b.name,'es'));
   if(!matches.length) return '<p class="muted">No hay clientes que coincidan con la búsqueda.</p>';
   return matches.map(item=>{
-    let record = {};
-    try {record=JSON.parse(localStorage.getItem(clientKey(item.id))) || {};} catch {}
+    const record=clientRecord(item.id);
+    const lastActivity=Object.keys(record.days||{}).sort().reverse().find(key=>hasClientActivity(record.days[key]));
     const weights=Object.entries(record.days||{}).filter(([,data])=>data.weight!=null).sort(([a],[b])=>b.localeCompare(a));
     const weight=weights[0];
     const access=Object.values(accounts).find(user=>user.role==='client'&&user.clientId===item.id);
-    return `<article class="client-row"><div><h3>${esc(item.name)}</h3><p class="muted">${item.archived?'Archivado':'Activo'}${weight?' · Último peso: '+format(weight[1].weight)+' kg · '+esc(pretty(weight[0])):''}</p>${item.sample?'':`<small>${access?'Usuario: '+esc(access.username):'Sin usuario de acceso'}</small>`}</div>
-    <div class="row"><a class="button-link" href="${esc(clientLink(item.id,'Progreso'))}">Ver progreso</a><a class="button-link" href="${esc(clientLink(item.id,'Ficha'))}">Editar ficha</a>
+    return `<article class="client-row"><div><h3>${esc(item.name)}</h3><p class="muted">${item.archived?'Archivado':'Activo'}${weight?' · Último peso: '+format(weight[1].weight)+' kg · '+esc(pretty(weight[0])):''}</p>${lastActivity?`<p class="muted">Último día con registro: ${esc(pretty(lastActivity))}</p>`: '<p class="muted">Sin actividad registrada</p>'}${item.sample?'':`<small>${access?'Usuario: '+esc(access.username):'Sin usuario de acceso'}</small>`}</div>
+    <div class="row">${action('Seguimiento diario','client-tracking',item.id,'primary')}<a class="button-link" href="${esc(clientLink(item.id,'Progreso'))}">Ver progreso</a><a class="button-link" href="${esc(clientLink(item.id,'Ficha'))}">Editar ficha</a>
     ${item.sample?'':action(access?'Cambiar usuario o clave':'Crear usuario y contraseña','client-access',item.id)+action('Simular una semana','sample-week',item.id)+action('Ver ejemplo del 1 al 16','sample-period',item.id)}
     ${action(item.archived?'Reactivar':'Archivar','archive-client',item.id)}
     ${action('Eliminar','delete-client',item.id)}</div></article>`;
@@ -677,7 +718,7 @@ function clientPanel() {
   return `${sectionBanner('clients','Clientes','Busca fichas y consulta el avance de cada persona.','Asesora y cliente revisando un cuaderno juntos')}
   <section class="card"><div class="row between"><h2>Directorio</h2><div class="row">${action('Ver ejemplo del 1 al 16','sample-period')}${action('Ver semana de ejemplo','sample-week')}${action('Añadir cliente','new-client','','primary')}</div></div>
   ${client?`<p><a href="${esc(clientLink(null,'Clientes'))}">Volver a mi registro personal</a></p>`:''}
-  <label>Buscar por nombre<input id="client-search" type="search" value="${esc(clientFilter)}" placeholder="Nombre del cliente"></label>
+  <p class="muted">Aquí ves los registros guardados en este navegador.</p><label>Buscar por nombre<input id="client-search" type="search" value="${esc(clientFilter)}" placeholder="Nombre del cliente"></label>
   <div id="client-results">${clientRows()}</div></section>`;
 }
 function help() {
@@ -1114,6 +1155,7 @@ document.addEventListener('click',async event=>{
     case 'page':if(arg==='Clientes'&&account.role!=='admin') break;page=arg;render();break;
     case 'report-day':selected=arg;reportRange='day';render();window.scrollTo(0,0);break;
     case 'open-sample-day':selected=arg;page='Hoy';render();window.scrollTo(0,0);break;
+    case 'client-tracking':openClientTracking(...arg.split('|'));break;
     case 'sample-week':openSampleWeek(arg);break;
     case 'sample-period':openSampleWeek(arg,true);break;
     case 'new-client':
