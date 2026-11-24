@@ -416,13 +416,13 @@ function profile() {
   ${dictationField('Qué debe decir','<input name="label" required maxlength="180" placeholder="Ejemplo: tomar mi pastilla">')}
   <label>Hora<input name="time" type="time" required value="06:00"></label><button class="primary">Añadir recordatorio</button></form>
   ${(state.dailyReminders || []).map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.kind)}</h3><p>${esc(item.label)}</p><div class="row">${action('▶ Probar voz','daily-test',item.id)}${action('Editar','daily-edit',item.id)}${action('Quitar horario','daily-delete',item.id)}</div></div>`).join('')}</section>
-  <section class="card"><form id="meal-reminder" class="stack"><h2>Aviso de comida</h2><p class="muted">Elige una comida y la hora. El aviso aparece y lee el menú de ese día con la app abierta.</p>
-  <div class="fields"><label>Fecha<input name="date" type="date" required value="${esc(state.mealReminder?.date || shift(dateKey(),1))}"></label>
-  <label>Hora<input name="time" type="time" required value="${esc(state.mealReminder?.time || meals.Desayuno)}"></label></div>
-  <label>Comida<select name="meal">${Object.keys(meals).map(name=>`<option ${name===state.mealReminder?.meal?'selected':''}>${name}</option>`).join('')}</select></label>
-  <button class="primary">Programar aviso de comida</button>
-  ${state.mealReminder?`<small>${state.mealReminder.fired?'Aviso mostrado':'Aviso programado'} · ${esc(state.mealReminder.meal)} · ${esc(pretty(state.mealReminder.date))} · ${esc(state.mealReminder.time)}</small>`:''}</form></section>
-  <section class="card"><form id="reminder" class="stack"><h2>Aviso hablado de agua</h2><small>Funciona mientras la app está abierta. Prueba el audio antes de activarlo.</small><label>Hora del aviso diario<input name="time" type="time" value="${esc(state.reminder)}"></label><button class="primary">Guardar horario</button></form></section>`;
+  <section class="card"><form id="meal-reminder" class="stack"><h2>Avisos hablados de comida</h2><p class="muted">Añade un aviso por comida. Con la app abierta, el asistente anuncia la comida y lee el menú si lo elegiste en Programa.</p>
+  <div class="fields"><label>Comida<select name="meal">${Object.keys(meals).map(name=>`<option data-time="${meals[name]}">${name}</option>`).join('')}</select></label>
+  <label>Hora<input name="time" type="time" required value="${meals.Desayuno}"></label></div>
+  <label>Solo para una fecha (opcional)<input name="date" type="date"></label><small>Deja la fecha vacía para repetir el aviso todos los días.</small>
+  <button class="primary">Añadir aviso de comida</button></form>
+  ${mealAlerts().map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.meal)}</h3><p class="muted">${item.date?esc(pretty(item.date))+(item.fired?' · Aviso mostrado':''):'Todos los días'}</p>${action('Quitar aviso','meal-reminder-delete',item.id)}</div>`).join('')}</section>
+  <section class="card"><form id="reminder" class="stack"><h2>Aviso diario de agua</h2><small>Elige una hora para escuchar «Es hora de tomar agua» todos los días con la app abierta. Para varios avisos, usa Mis recordatorios diarios. Para desactivar este aviso, borra la hora y guarda.</small><label>Hora del aviso diario<input name="time" type="time" value="${esc(state.reminder)}"></label><button class="primary">Guardar horario de agua</button></form></section>`;
 }
 function clientLink(id, view, date) {
   const url=new URLSearchParams();
@@ -752,6 +752,7 @@ document.addEventListener('change',async event=>{
   if(el.id==='selected' && el.value) {selected=el.value;render();}
   if(el.id==='report-range') {reportRange=el.value;render();}
   if(el.id==='report-comparison') {reportComparison=el.value;render();}
+  if(el.matches('#meal-reminder select[name="meal"]')) el.form.elements.time.value=el.selectedOptions[0].dataset.time;
   if(el.id==='comparison') {comparison=el.value;render();}
   if(el.id==='menu'||el.dataset.menuDate) {state.week[el.dataset.menuDate || selected]=el.value;update('Menú actualizado.');}
   if(el.matches('[data-name]')) el.closest('.food').querySelector('[data-density]').value=catalogue[el.value] ?? '';
@@ -867,11 +868,21 @@ document.addEventListener('submit',event=>{
     }
     case 'meal-reminder': {
       const reminder = Object.fromEntries(data);
-      if (new Date(reminder.date+'T'+reminder.time) <= new Date()) return notify('Elige una fecha y hora futuras.');
-      state.mealReminder=reminder;
-      break;
+      if (reminder.date && new Date(reminder.date+'T'+reminder.time)<=new Date()) return notify('Elige una fecha y hora futuras.');
+      const items=mealAlerts();
+      if(items.some(item=>item.date===reminder.date && item.time===reminder.time && item.meal===reminder.meal)) return notify('Este aviso ya está programado.');
+      state.mealReminders=[...items,{...reminder,id:crypto.randomUUID()}].sort((a,b)=>a.time.localeCompare(b.time));
+      delete state.mealReminder;
+      update('Aviso de '+reminder.meal.toLowerCase()+' añadido.');
+      return;
     }
-    case 'reminder':state.reminder=data.get('time');break;
+    case 'reminder': {
+      const time=data.get('time');
+      if(time!==state.reminder) delete state.lastWaterReminder;
+      state.reminder=time;
+      update(time?'Aviso diario de agua guardado para las '+time+'.':'Aviso diario de agua desactivado.');
+      return;
+    }
     case 'training-alternative': {
       const alternative=data.get('exercise').trim();
       if(!alternative) return notify('Escribe el ejercicio que hiciste.');
@@ -979,6 +990,11 @@ document.addEventListener('click',async event=>{
       break;
     }
     case 'dictate':dictate(button);break;
+    case 'meal-reminder-delete':
+      state.mealReminders=mealAlerts().filter(item=>item.id!==arg);
+      delete state.mealReminder;
+      update('Aviso de comida quitado.');
+      break;
     case 'daily-edit': {
       const item=state.dailyReminders?.find(item=>item.id===arg);
       if (!item) break;
@@ -1075,6 +1091,9 @@ function showDailyAlert(item,key,test=false) {
   openDialog(`<div id="daily-alert" class="stack" data-id="${esc(item.id)}" data-date="${key}" data-test="${test}"><h2>${test?'Prueba de voz':esc(item.kind)}</h2><p>${esc(message)}</p><div class="row">${action('✓ Lo hice','daily-answer','Realizado','primary')}${action('✕ No lo hice','daily-answer','No realizado')}${action('Cerrar','close')}</div></div>`);
   speak(message);
 }
+function mealAlerts() {
+  return state.mealReminders ?? (state.mealReminder ? [{...state.mealReminder,id:'legacy'}] : []);
+}
 function checkReminders(){
   const now=new Date();
   const time=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
@@ -1091,12 +1110,23 @@ function checkReminders(){
     state.lastWaterReminder=dateKey(now);
     save();
     speak('Es hora de tomar agua. Registra tu vaso en la app.');
+    return;
   }
-  const reminder = state.mealReminder;
-  if (!reminder || reminder.fired || reminder.date !== dateKey(now) || time < reminder.time || dialog.open || !intro.hidden) return;
-  reminder.fired = true;
+  const reminders=mealAlerts();
+  const reminder=reminders.find(item=>{
+    if(item.date) return !item.fired && item.date===key && item.time<=time;
+    const minutes=now.getHours()*60+now.getMinutes();
+    const [hour,minute]=item.time.split(':').map(Number);
+    const delay=minutes-(hour*60+minute);
+    return item.lastShown!==key && delay>=0 && delay<5;
+  });
+  if(!reminder) return;
+  if(reminder.date) reminder.fired=true;
+  reminder.lastShown=key;
+  state.mealReminders=reminders;
+  delete state.mealReminder;
   save();
-  selected = reminder.date;
+  selected = key;
   page = 'Hoy';
   render();
   showMealAlert(reminder.meal,true);
