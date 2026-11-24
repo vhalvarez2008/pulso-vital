@@ -353,7 +353,7 @@ function reminderMessage(name) {
 function remindersForDay(record,key) {
   const weekday=parseDate(key).getDay();
   const scheduled=(state.dailyReminders||[]).map(item=>({
-    time:item.time,title:item.kind,text:item.label,answer:record.reminderAnswers?.[item.id]
+    id:item.id,time:item.time,title:item.kind,text:item.label,answer:record.reminderAnswers?.[item.id]
   }));
   for(const item of mealAlerts()) {
     if(item.date?item.date!==key:item.weekdays&&!item.weekdays.includes(weekday)) continue;
@@ -363,7 +363,8 @@ function remindersForDay(record,key) {
   if(rule?.enabled) scheduled.push({time:rule.start,title:'Agua por intervalos',text:`Cada ${rule.minutes} min · de ${rule.start} a ${rule.end}`,interval:true});
   if(state.reminder&&!waterIntervalMatches(rule,state.reminder)) scheduled.push({time:state.reminder,title:'Agua',text:'Aviso a hora fija'});
   return `<section class="card ui-card accent-blue"><div class="row between"><h2>Recordatorios del día</h2>${action('Configurar','page','Ficha')}</div>
-    ${scheduled.length?scheduled.sort((a,b)=>a.time.localeCompare(b.time)).map(item=>`<div class="meal"><h3>${item.interval?'':esc(item.time)+' · '}${esc(item.title)}</h3><p>${esc(item.text)}</p>${item.answer?`<small>${esc(item.answer)}</small>`:''}</div>`).join(''):'<p class="muted">No hay avisos programados para esta fecha.</p>'}
+    ${scheduled.length?scheduled.sort((a,b)=>a.time.localeCompare(b.time)).map(item=>`<div class="meal"><h3>${item.interval?'':esc(item.time)+' · '}${esc(item.title)}</h3><p>${esc(item.text)}</p>${item.answer?`<small>${esc(item.answer)}</small>`:''}
+    ${item.id?`<div class="row meal-buttons">${action(item.answer?'Volver a pendiente':'✓ Lo hice','daily-manual',item.id)}${!item.answer?action('✕ No lo hice','daily-manual',item.id+'|skip'):''}</div>`:''}</div>`).join(''):'<p class="muted">No hay avisos programados para esta fecha.</p>'}
   </section>`;
 }
 function today() {
@@ -658,6 +659,9 @@ function profile() {
     : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
   ${assessmentCard()}
   ${account?.role==='admin'?assessedPlanCard(true)+advisorNotes():''}
+  <section class="card ui-card accent-purple"><form id="late-checks" class="stack"><h2>Aviso de registros pendientes</h2>
+  <label class="row"><input class="check-input" type="checkbox" name="enabled" ${state.lateChecks?'checked':''}> Recordarme por voz si un registro sigue pendiente después de 15 minutos</label>
+  <small>Se aplica a comidas y recordatorios diarios. Pulso Vital debe estar abierto.</small><button>Guardar preferencia</button></form></section>
   <section class="card ui-card accent-purple"><form id="daily-reminder" class="stack"><h2>Mis recordatorios diarios</h2><p class="muted">Añade una hora por aviso. Puedes programar varios para el agua, tus medicamentos u otras actividades.</p>
   <label>Tipo<select name="kind"><option>Medicamento</option><option>Gotas</option><option>Agua</option><option>Otro</option></select></label>
   ${dictationField('Qué debe decir','<input name="label" required maxlength="180" placeholder="Ejemplo: tomar mi pastilla">')}
@@ -854,6 +858,7 @@ function openClientTracking(id, date) {
   const missing=Object.entries(fields).filter(([key])=>!String(record.profile?.[key]??'').trim()).map(([,label])=>label);
   const planned=days.filter(key=>record.week?.[key]).length;
   const logged=days.filter(key=>hasClientActivity(record.days?.[key])).length;
+  const pendingToday=pendingChecks(record,dateKey(),currentTime(new Date()));
   const exerciseLogs=days.flatMap(key=>{
     const entry=record.days?.[key]||{};
     const indexes=new Set([...Object.keys(entry.training||{}),...Object.keys(entry.trainingSets||{})]);
@@ -868,6 +873,8 @@ function openClientTracking(id, date) {
   openDialog(`<section class="stack"><h2>Seguimiento diario · ${esc(person.name)}</h2>
     <div class="row">${action('Informe PDF','client-report',id+'|'+first,'primary')}${action('Semana anterior','client-tracking',id+'|'+shift(first,-7))}${action('Semana siguiente','client-tracking',id+'|'+shift(first,7))}</div>
     <p>${esc(pretty(first))} a ${esc(pretty(days[6]))}</p>
+    <div class="empty"><strong>${esc(enrollmentSummary(person))}</strong><p>Pendientes de hoy: ${pendingToday.length}</p>
+      ${pendingToday.length?`<ul>${pendingToday.map(item=>`<li>${esc(item.time)} · ${esc(item.label)}</li>`).join('')}</ul>`:''}</div>
     <form class="empty stack" id="weekly-review" data-client="${esc(id)}" data-week="${first}">
       <strong>Revisión de la semana</strong>
       ${Object.entries({obstacle:'Qué le costó',adjustment:'Qué ajuste acordaron',next:'Qué revisarán la próxima semana'}).map(([key,label])=>`<label>${label}<textarea name="${key}" rows="2" maxlength="1000">${esc(record.weeklyReviews?.[first]?.[key])}</textarea></label>`).join('')}
@@ -941,19 +948,59 @@ function clientReport(id,start,end) {
       ${notes.length?`<h3>Notas del asesor</h3><ul>${notes.map(note=>`<li>${esc(note.date)} · ${esc(note.type)} · ${esc(note.text)} ${esc(note.reason)}</li>`).join('')}</ul>`:''}
     </article></div>`);
 }
+const enrollmentTypes={
+  'trial-3':{label:'Prueba de 3 días',days:3},
+  'trial-5':{label:'Prueba de 5 días',days:5},
+  'plan-3':{label:'Programa de 3 meses',months:3},
+  'plan-6':{label:'Programa de 6 meses',months:6}
+};
+let enrollmentFilter='';
+function enrollmentEnd(enrollment) {
+  const type=enrollmentTypes[enrollment?.type];
+  if(!type||!enrollment.start) return '';
+  if(type.days) return shift(enrollment.start,type.days);
+  const date=parseDate(enrollment.start);
+  const dayOfMonth=date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth()+type.months);
+  date.setDate(Math.min(dayOfMonth,new Date(date.getFullYear(),date.getMonth()+1,0).getDate()));
+  return dateKey(date);
+}
+function enrollmentSummary(item,key=dateKey()) {
+  const plan=item.enrollment;
+  const end=enrollmentEnd(plan);
+  if(!end) return 'Sin modalidad asignada';
+  const status=key<plan.start?'Por iniciar':key>=end?'Finalizado':'En curso';
+  return enrollmentTypes[plan.type].label+' · '+status+' · hasta '+pretty(shift(end,-1));
+}
+function enrollmentFields(plan={}) {
+  return `<div class="fields"><label>Modalidad<select name="enrollment"><option value="">Sin asignar</option>${Object.entries(enrollmentTypes).map(([key,type])=>`<option value="${key}" ${key===plan.type?'selected':''}>${type.label}</option>`).join('')}</select></label>
+  <label>Fecha de inicio<input name="start" type="date" required value="${esc(plan.start||dateKey())}"></label></div>`;
+}
+const currentTime = now => String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+function pendingChecks(record,key,time) {
+  const entry=record.days?.[key]||{};
+  const weekday=parseDate(key).getDay();
+  const daily=(record.dailyReminders||[]).filter(item=>item.time<=time&&!entry.reminderAnswers?.[item.id]).map(item=>({id:'daily:'+item.id,label:item.label,time:item.time}));
+  const mealsDue=mealAlerts(record).filter(item=>item.time<=time&&(item.date?item.date===key:!item.weekdays||item.weekdays.includes(weekday))&&!entry.entries?.[item.meal])
+    .map(item=>({id:'meal:'+item.id,label:item.meal,time:item.time}));
+  return [...daily,...mealsDue];
+}
 function clientRows() {
   const normal = text=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const matches=[...clients].filter(item=>normal(item.name).includes(normal(clientFilter.trim())))
+  const matches=[...clients].filter(item=>normal(item.name).includes(normal(clientFilter.trim()))&&(
+    !enrollmentFilter || (enrollmentFilter==='none'?!item.enrollment?.type:item.enrollment?.type===enrollmentFilter)))
     .sort((a,b)=>Number(!!a.archived)-Number(!!b.archived)||a.name.localeCompare(b.name,'es'));
   if(!matches.length) return '<p class="muted">No hay clientes que coincidan con la búsqueda.</p>';
   return matches.map(item=>{
     const record=clientRecord(item.id);
+    const pending=pendingChecks(record,dateKey(),currentTime(new Date())).length;
     const lastActivity=Object.keys(record.days||{}).sort().reverse().find(key=>hasClientActivity(record.days[key]));
     const weights=Object.entries(record.days||{}).filter(([,data])=>data.weight!=null).sort(([a],[b])=>b.localeCompare(a));
     const weight=weights[0];
     const access=Object.values(accounts).find(user=>user.role==='client'&&user.clientId===item.id);
-    return `<details class="programme-fold client-row" data-fold="client-${esc(item.id)}" name="client-directory"><summary><span><strong>${esc(item.name)}</strong><small>${item.archived?'Archivado':'Activo'}</small></span></summary><div class="fold-content"><div><p class="muted">${item.archived?'Archivado':'Activo'}${weight?' · Último peso: '+format(weight[1].weight)+' kg · '+esc(pretty(weight[0])):''}</p>${lastActivity?`<p class="muted">Último día con registro: ${esc(pretty(lastActivity))}</p>`: '<p class="muted">Sin actividad registrada</p>'}${item.sample?'':`<small>${access?'Usuario: '+esc(access.username):'Sin usuario de acceso'}</small>`}</div>
-    <div class="row">${action('Seguimiento diario','client-tracking',item.id,'primary')}<a class="button-link" href="${esc(clientLink(item.id,'Progreso'))}">Ver progreso</a><a class="button-link" href="${esc(clientLink(item.id,'Ficha'))}">Editar ficha</a>
+    return `<details class="programme-fold client-row" data-fold="client-${esc(item.id)}" name="client-directory"><summary><span><strong>${esc(item.name)}</strong><small>${item.archived?'Archivado':esc(enrollmentSummary(item))}${!item.archived&&pending?' · '+pending+' pendiente(s) hoy':''}</small></span></summary><div class="fold-content"><div><p class="muted">${item.archived?'Archivado':'Activo'}${weight?' · Último peso: '+format(weight[1].weight)+' kg · '+esc(pretty(weight[0])):''}</p>${lastActivity?`<p class="muted">Último día con registro: ${esc(pretty(lastActivity))}</p>`: '<p class="muted">Sin actividad registrada</p>'}${item.sample?'':`<small>${access?'Usuario: '+esc(access.username):'Sin usuario de acceso'}</small>`}</div>
+    <div class="row">${action('Seguimiento diario','client-tracking',item.id,'primary')}${action('Editar modalidad','enrollment-edit',item.id)}<a class="button-link" href="${esc(clientLink(item.id,'Progreso'))}">Ver progreso</a><a class="button-link" href="${esc(clientLink(item.id,'Ficha'))}">Editar ficha</a>
     ${item.sample?'':action(access?'Cambiar usuario o clave':'Crear usuario y contraseña','client-access',item.id)+action('Simular una semana','sample-week',item.id)+action('Ver ejemplo del 1 al 16','sample-period',item.id)}
     ${action(item.archived?'Reactivar':'Archivar','archive-client',item.id)}
     ${action('Eliminar','delete-client',item.id)}</div></div></details>`;
@@ -963,7 +1010,8 @@ function clientPanel() {
   return `${sectionBanner('clients','Clientes','Busca fichas y consulta el avance de cada persona.','Asesora y cliente revisando un cuaderno juntos')}
   <section class="card"><div class="row between"><h2>Directorio</h2><div class="row">${action('Ver ejemplo del 1 al 16','sample-period')}${action('Ver semana de ejemplo','sample-week')}${action('Añadir cliente','new-client','','primary')}</div></div>
   ${client?`<p><a href="${esc(clientLink(null,'Clientes'))}">Volver a mi registro personal</a></p>`:''}
-  <p class="muted">Aquí ves los registros guardados en este navegador.</p><label>Buscar por nombre<input id="client-search" type="search" value="${esc(clientFilter)}" placeholder="Nombre del cliente"></label>
+  <p class="muted">Aquí ves los registros guardados en este navegador.</p><div class="fields"><label>Buscar por nombre<input id="client-search" type="search" value="${esc(clientFilter)}" placeholder="Nombre del cliente"></label>
+  <label>Filtrar por modalidad<select id="enrollment-filter"><option value="">Todas</option><option value="none" ${enrollmentFilter==='none'?'selected':''}>Sin asignar</option>${Object.entries(enrollmentTypes).map(([key,type])=>`<option value="${key}" ${enrollmentFilter===key?'selected':''}>${type.label}</option>`).join('')}</select></label></div>
   <div id="client-results">${clientRows()}</div></section>`;
 }
 function help() {
@@ -1199,6 +1247,10 @@ document.addEventListener('change',async event=>{
   if(el.id==='tracking-exercise-filter') {
     dialog.querySelectorAll('[data-tracking-exercise]').forEach(row=>row.hidden=!!el.value&&row.dataset.trackingExercise!==el.value);
   }
+  if(el.id==='enrollment-filter') {
+    enrollmentFilter=el.value;
+    document.querySelector('#client-results').innerHTML=clientRows();
+  }
   if(el.id==='comparison') {comparison=el.value;render();}
   if(el.id==='menu'||el.dataset.menuDate) {state.week[el.dataset.menuDate || selected]=el.value;update('Menú actualizado.');}
   if(el.matches('[data-food-pick], [data-name]')) {
@@ -1250,7 +1302,8 @@ document.addEventListener('submit',event=>{
       const name=data.get('name').trim();
       if(!name) return notify('Escribe el nombre del cliente.');
       const submit=form.querySelector('button[type=submit]');
-      const item={id:crypto.randomUUID(),name,archived:false};
+      const type=data.get('enrollment');
+      const item={id:crypto.randomUUID(),name,archived:false,enrollment:Object.hasOwn(enrollmentTypes,type)?{type,start:data.get('start')}:null};
       form.dataset.saving='true';
       submit.disabled=true;
       if(!persistClients([...clients,item])) {
@@ -1274,6 +1327,20 @@ document.addEventListener('submit',event=>{
       window.scrollTo(0,0);
       return;
     }
+    case 'enrollment-edit': {
+      if(account.role!=='admin') return;
+      const type=data.get('enrollment');
+      const enrollment=Object.hasOwn(enrollmentTypes,type)?{type,start:data.get('start')}:null;
+      if(!persistClients(clients.map(item=>item.id===form.dataset.id?{...item,enrollment}:item))) return;
+      dialog.close();
+      render();
+      notify('Modalidad actualizada.');
+      return;
+    }
+    case 'late-checks':
+      state.lateChecks=data.has('enabled');
+      update('Preferencia de avisos pendientes guardada.');
+      return;
     case 'assessment': {
       const entry=Object.fromEntries(data);
       const hadAssessment=!!state.assessment?.date;
@@ -1476,8 +1543,14 @@ document.addEventListener('click',async event=>{
     case 'client-tracking':openClientTracking(...arg.split('|'));break;
     case 'sample-week':openSampleWeek(arg);break;
     case 'sample-period':openSampleWeek(arg,true);break;
+    case 'enrollment-edit': {
+      if(account.role!=='admin') break;
+      const person=clients.find(item=>item.id===arg);
+      if(person) openDialog(`<form id="enrollment-edit" class="stack" data-id="${esc(person.id)}"><h2>Modalidad · ${esc(person.name)}</h2>${enrollmentFields(person.enrollment||{})}<div class="row">${action('Cancelar','close')}<button class="primary">Guardar modalidad</button></div></form>`);
+      break;
+    }
     case 'new-client':
-      openDialog(`<form id="new-client" class="stack"><h2>Añadir cliente</h2><label>Nombre completo<input name="name" maxlength="140" required></label><div class="row">${action('Cancelar','close')}<button class="primary" type="submit">Crear ficha</button></div></form>`);
+      openDialog(`<form id="new-client" class="stack"><h2>Añadir cliente</h2><label>Nombre completo<input name="name" maxlength="140" required></label>${enrollmentFields()}<div class="row">${action('Cancelar','close')}<button class="primary" type="submit">Crear ficha</button></div></form>`);
       break;
     case 'archive-client':
       if(persistClients(clients.map(item=>item.id===arg?{...item,archived:!item.archived}:item))) render();
@@ -1553,6 +1626,15 @@ document.addEventListener('click',async event=>{
       state.dailyReminders=state.dailyReminders.filter(item=>item.id!==arg);
       update('Horario quitado.');
       break;
+    case 'daily-manual': {
+      const [id,answer]=arg.split('|');
+      if(!state.dailyReminders?.some(item=>item.id===id)) break;
+      const answers=(editDay().reminderAnswers??={});
+      if(Object.hasOwn(answers,id)) delete answers[id];
+      else answers[id]=answer==='skip'?'No realizado':'Realizado';
+      update('Estado del recordatorio actualizado.');
+      break;
+    }
     case 'daily-answer': {
       const form=dialog.querySelector('#daily-alert');
       if(form.dataset.test==='false') {
@@ -1655,8 +1737,8 @@ function mealReminderFields(item={}) {
       <div class="row">${mealWeekdays.map(([day,name])=>`<label class="row"><input class="check-input" type="checkbox" name="weekdays" value="${day}" ${repeat==='weekly'?'':'disabled'} ${item.weekdays?.includes(day)?'checked':''}> ${name}</label>`).join('')}</div></fieldset>
     <label class="meal-date" ${repeat==='once'?'':'hidden'}>Fecha<input name="date" type="date" value="${esc(item.date)}" required ${repeat==='once'?'':'disabled'}></label>`;
 }
-function mealAlerts() {
-  return state.mealReminders ?? (state.mealReminder ? [{...state.mealReminder,id:'legacy'}] : []);
+function mealAlerts(record=state) {
+  return record.mealReminders ?? (record.mealReminder ? [{...record.mealReminder,id:'legacy'}] : []);
 }
 function waterIntervalMatches(rule,time) {
   if(!rule?.enabled || time<rule.start || time>rule.end) return false;
@@ -1701,7 +1783,19 @@ function checkReminders(){
     const delay=minutes-(hour*60+minute);
     return item.lastShown!==key && delay>=0 && delay<5;
   });
-  if(!reminder) return;
+  if(!reminder) {
+    if(!state.lateChecks) return;
+    const cutoff=new Date(now.getTime()-15*60000);
+    if(dateKey(cutoff)!==key) return;
+    const flags=state.lateCheckFlags?.date===key?state.lateCheckFlags.ids:[];
+    const pending=pendingChecks(state,key,currentTime(cutoff)).filter(item=>!flags.includes(item.id));
+    if(pending.length) {
+      state.lateCheckFlags={date:key,ids:[...flags,...pending.map(item=>item.id)]};
+      save();
+      speak('Tienes registros pendientes. Revisa Hoy para confirmar qué hiciste o qué quedó sin realizar.');
+    }
+    return;
+  }
   if(reminder.date) reminder.fired=true;
   reminder.lastShown=key;
   state.mealReminders=reminders;
