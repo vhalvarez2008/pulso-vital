@@ -491,14 +491,10 @@ function profile() {
   ${dictationField('Qué debe decir','<input name="label" required maxlength="180" placeholder="Ejemplo: tomar mi pastilla">')}
   <label>Hora<input name="time" type="time" required value="06:00"></label><button class="primary">Añadir recordatorio</button></form>
   ${(state.dailyReminders || []).map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.kind)}</h3><p>${esc(item.label)}</p><div class="row">${action('▶ Probar voz','daily-test',item.id)}${action('Editar','daily-edit',item.id)}${action('Quitar horario','daily-delete',item.id)}</div></div>`).join('')}</section>
-  <section class="card"><form id="meal-reminder" class="stack"><h2>Avisos hablados de comida</h2><p class="muted">Añade un aviso por comida. Con la app abierta, el asistente anuncia la comida y lee el menú si lo elegiste en Programa.</p>
-  <div class="fields"><label>Comida<select name="meal">${Object.keys(meals).map(name=>`<option data-time="${meals[name]}">${name}</option>`).join('')}</select></label>
-  <label>Hora<input name="time" type="time" required value="${meals.Desayuno}"></label></div>
-  <label>Repetir<select name="repeat"><option value="daily">Todos los días</option><option value="weekly">Cada semana</option><option value="once">Solo una fecha</option></select></label>
-  <fieldset class="meal-weekdays" hidden><legend>Días de la semana</legend><div class="row">${mealWeekdays.map(([day,name])=>`<label class="row"><input class="check-input" type="checkbox" name="weekdays" value="${day}" disabled> ${name}</label>`).join('')}</div></fieldset>
-  <label class="meal-date" hidden>Fecha<input name="date" type="date" required disabled></label>
+  <section class="card"><form id="meal-reminder" class="stack" data-meal-schedule><h2>Avisos hablados de comida</h2><p class="muted">Añade un aviso por comida. Con la app abierta, el asistente anuncia la comida y lee el menú si lo elegiste en Programa.</p>
+  ${mealReminderFields()}
   <button class="primary">Añadir aviso de comida</button></form>
-  ${mealAlerts().map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.meal)}</h3><p class="muted">${item.date?esc(pretty(item.date))+(item.fired?' · Aviso mostrado':''):(item.weekdays?mealWeekdays.filter(([day])=>item.weekdays.includes(day)).map(([,name])=>name).join(', ')+' · Cada semana':'Todos los días')}</p>${action('Quitar aviso','meal-reminder-delete',item.id)}</div>`).join('')}</section>
+  ${mealAlerts().map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.meal)}</h3><p class="muted">${item.date?esc(pretty(item.date))+(item.fired?' · Aviso mostrado':''):(item.weekdays?mealWeekdays.filter(([day])=>item.weekdays.includes(day)).map(([,name])=>name).join(', ')+' · Cada semana':'Todos los días')}</p><div class="row">${action('Editar','meal-reminder-edit',item.id)}${action('Quitar aviso','meal-reminder-delete',item.id)}</div></div>`).join('')}</section>
   <section class="card"><h2>Avisos de agua</h2>
   <form id="water-interval" class="stack"><h3>Avisos por intervalo</h3><p class="muted">Recibe avisos hablados durante el horario que elijas, con la app abierta.</p>
   <label class="row"><input class="check-input" type="checkbox" name="enabled" ${state.waterInterval?.enabled?'checked':''}> Activar avisos por intervalo</label>
@@ -942,7 +938,7 @@ document.addEventListener('change',async event=>{
   if(el.id==='selected' && el.value) {selected=el.value;render();}
   if(el.id==='report-range') {reportRange=el.value;render();}
   if(el.id==='report-comparison') {reportComparison=el.value;render();}
-  if(el.matches('#meal-reminder select[name="repeat"]')) {
+  if(el.matches('[data-meal-schedule] select[name="repeat"]')) {
     const weekdays=el.form.querySelector('.meal-weekdays');
     const date=el.form.elements.date;
     weekdays.hidden=el.value!=='weekly';
@@ -950,7 +946,7 @@ document.addEventListener('change',async event=>{
     date.disabled=el.value!=='once';
     date.closest('label').hidden=date.disabled;
   }
-  if(el.matches('#meal-reminder select[name="meal"]')) el.form.elements.time.value=el.selectedOptions[0].dataset.time;
+  if(el.matches('[data-meal-schedule] select[name="meal"]')) el.form.elements.time.value=el.selectedOptions[0].dataset.time;
   if(el.id==='comparison') {comparison=el.value;render();}
   if(el.id==='menu'||el.dataset.menuDate) {state.week[el.dataset.menuDate || selected]=el.value;update('Menú actualizado.');}
   if(el.matches('[data-food-pick], [data-name]')) {
@@ -1070,6 +1066,7 @@ document.addEventListener('submit',event=>{
       state.dailyReminders.sort((a,b)=>a.time.localeCompare(b.time));
       break;
     }
+    case 'meal-reminder-edit':
     case 'meal-reminder': {
       const {meal,time,repeat}=Object.fromEntries(data);
       const reminder={meal,time,date:repeat==='once'?data.get('date'):''};
@@ -1079,10 +1076,18 @@ document.addEventListener('submit',event=>{
       }
       if (reminder.date && new Date(reminder.date+'T'+reminder.time)<=new Date()) return notify('Elige una fecha y hora futuras.');
       const items=mealAlerts();
-      if(items.some(item=>item.date===reminder.date && item.time===reminder.time && item.meal===reminder.meal && String(item.weekdays||[])===String(reminder.weekdays||[]))) return notify('Este aviso ya está programado.');
-      state.mealReminders=[...items,{...reminder,id:crypto.randomUUID()}].sort((a,b)=>a.time.localeCompare(b.time));
+      const id=form.dataset.id;
+      const existing=items.find(item=>item.id===id);
+      if(id&&!existing) return notify('Ese aviso ya no está disponible.');
+      if(items.some(item=>item.id!==id && item.date===reminder.date && item.time===reminder.time && item.meal===reminder.meal && String(item.weekdays||[])===String(reminder.weekdays||[]))) return notify('Este aviso ya está programado.');
+      if(existing && existing.meal===meal && existing.time===time && existing.date===reminder.date) {
+        reminder.lastShown=existing.lastShown;
+        reminder.fired=existing.fired;
+      }
+      state.mealReminders=[...items.filter(item=>item.id!==id),{...reminder,id:id||crypto.randomUUID()}].sort((a,b)=>a.time.localeCompare(b.time));
       delete state.mealReminder;
-      update('Aviso de '+reminder.meal.toLowerCase()+' añadido.');
+      if(existing) dialog.close();
+      update('Aviso de '+reminder.meal.toLowerCase()+(existing?' actualizado.':' añadido.'));
       return;
     }
     case 'water-interval': {
@@ -1211,6 +1216,15 @@ document.addEventListener('click',async event=>{
       break;
     }
     case 'dictate':dictate(button);break;
+    case 'meal-reminder-edit': {
+      const item=mealAlerts().find(item=>item.id===arg);
+      if(item) openDialog(`<form id="meal-reminder-edit" class="stack" data-meal-schedule data-id="${esc(item.id)}"><h2>Editar aviso de comida</h2>${mealReminderFields(item)}
+        <div class="row">${action('Cancelar','close')}<button class="primary">Guardar cambios</button></div></form>`);
+      break;
+    }
+    case 'meal-weekdays-workweek':
+      button.closest('fieldset').querySelectorAll('input').forEach(input=>input.checked=Number(input.value)>=1&&Number(input.value)<=5);
+      break;
     case 'meal-reminder-delete':
       state.mealReminders=mealAlerts().filter(item=>item.id!==arg);
       delete state.mealReminder;
@@ -1318,6 +1332,16 @@ function showDailyAlert(item,key,test=false) {
   speak(message);
 }
 const mealWeekdays=[[1,'Lunes'],[2,'Martes'],[3,'Miércoles'],[4,'Jueves'],[5,'Viernes'],[6,'Sábado'],[0,'Domingo']];
+function mealReminderFields(item={}) {
+  const repeat=item.date?'once':item.weekdays?'weekly':'daily';
+  return `<div class="fields"><label>Comida<select name="meal">${Object.keys(meals).map(name=>`<option data-time="${meals[name]}" ${name===item.meal?'selected':''}>${name}</option>`).join('')}</select></label>
+    <label>Hora<input name="time" type="time" required value="${esc(item.time||meals.Desayuno)}"></label></div>
+    <label>Repetir<select name="repeat">${[['daily','Todos los días'],['weekly','Cada semana · Elegir días'],['once','Solo una fecha']].map(([value,label])=>`<option value="${value}" ${value===repeat?'selected':''}>${label}</option>`).join('')}</select></label>
+    <fieldset class="meal-weekdays" ${repeat==='weekly'?'':'hidden'}><legend>Días de la semana</legend><p class="muted">Marca los días en que quieres oír este aviso.</p>
+      ${action('Marcar lunes a viernes','meal-weekdays-workweek')}
+      <div class="row">${mealWeekdays.map(([day,name])=>`<label class="row"><input class="check-input" type="checkbox" name="weekdays" value="${day}" ${repeat==='weekly'?'':'disabled'} ${item.weekdays?.includes(day)?'checked':''}> ${name}</label>`).join('')}</div></fieldset>
+    <label class="meal-date" ${repeat==='once'?'':'hidden'}>Fecha<input name="date" type="date" value="${esc(item.date)}" required ${repeat==='once'?'':'disabled'}></label>`;
+}
 function mealAlerts() {
   return state.mealReminders ?? (state.mealReminder ? [{...state.mealReminder,id:'legacy'}] : []);
 }
