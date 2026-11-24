@@ -1,7 +1,7 @@
 'use strict';
 
 const prefix = 'pulso-vital-shell-';
-const cacheName = prefix + '24';
+const cacheName = prefix + '25';
 const shell = new URL('./index.html', self.location.href);
 const assets = [shell, './manifest.webmanifest', './pulso-192.png', './pulso-512.png'];
 
