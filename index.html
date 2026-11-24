@@ -120,6 +120,7 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
   .report-controls{display:none!important}.report-day h3,.report-day h4{break-after:avoid}
 }
 </style>
+<style>.assessment-text{white-space:pre-wrap}</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -389,6 +390,7 @@ function programme() {
     const items=menuTemplate(choice)[meal];
     return `<div class="meal"><h3>${meal}</h3><p>${items?.length?esc(describe(items)):'Sin programar'}</p>${action(items?.length?'Editar comida':'Añadir comida','menu-template',choice+'|'+meal)}</div>`;
   }).join('')}</div></details>`).join('')}</section>
+  ${assessedPlanCard()}
   ${trainingSection()}`;
 }
 function trainingDate(index) {
@@ -588,13 +590,61 @@ function advisorNotes() {
   ${dictationField('Nota o cambio','<textarea name="text" required></textarea>')}${dictationField('Motivo o próximo paso','<input name="reason">')}<button class="primary">Añadir al historial</button></form>
   ${state.notes.map((entry,index)=>`<div class="meal"><h3>${esc(entry.type)} · ${esc(entry.date)}</h3><p>${esc(entry.text)}</p><small>${esc(entry.reason)}</small><div class="row meal-buttons">${action('Editar','note-edit',index)}${action('Eliminar','note-delete',index)}</div></div>`).join('')}</section>`;
 }
+const assessmentFields = [
+  ['weight','Peso inicial (kg)',1,700],['waist','Cintura (cm)',1,500],
+  ['bodyFat','Grasa corporal medida (%)',0,100],['goal','Cuánto te gustaría bajar (kg)',0,700],
+  ['trainingDays','Días disponibles por semana',0,7]
+];
+function adultBmi(born,weight,height,asOf=dateKey()) {
+  const kg=Number(weight),cm=Number(height);
+  if(!born || born>asOf || !(kg>0&&cm>0)) return null;
+  const years=Number(asOf.slice(0,4))-Number(born.slice(0,4))-(asOf.slice(5)<born.slice(5)?1:0);
+  if(years<20) return {years};
+  const value=kg*10000/(cm*cm);
+  const category=value<18.5?'Peso bajo':value<25?'Rango de peso saludable':value<30?'Sobrepeso':value<35?'Obesidad clase 1':value<40?'Obesidad clase 2':'Obesidad clase 3';
+  return {years,value,category};
+}
+function assessmentCard() {
+  const data=state.assessment||{};
+  const bmi=adultBmi(state.profile.born,data.weight,state.profile.height);
+  const options=['Casa','Gimnasio','Aire libre','Otro'];
+  const limits=['Rodillas','Espalda','Movilidad','Preparar comidas','Tiempo o transporte'];
+  return `<section class="card ui-card accent-purple"><h2>Test de evaluación inicial</h2>
+  <p>Completa tu fecha de nacimiento, estatura y condiciones o medicamentos en la ficha. Usa este test para contar cómo puedes seguir el programa.</p>
+  <form id="assessment" class="stack"><div class="fields">
+    ${assessmentFields.map(([key,label,min,max])=>`<label>${label}<input name="${key}" type="number" min="${min}" max="${max}" step="${key==='trainingDays'?'1':'any'}" value="${esc(data[key])}"></label>`).join('')}
+    <label>Grasa visceral (lectura del equipo, con unidad o escala)<input name="visceral" maxlength="80" value="${esc(data.visceral)}"></label>
+  </div>
+  <fieldset class="meal-weekdays"><legend>Dónde puedes entrenar</legend><div class="row">${options.map(place=>`<label class="row"><input class="check-input" type="checkbox" name="places" value="${place}" ${data.places?.includes(place)?'checked':''}> ${place}</label>`).join('')}</div></fieldset>
+  <fieldset class="meal-weekdays"><legend>Qué se te dificulta</legend><div class="row">${limits.map(limit=>`<label class="row"><input class="check-input" type="checkbox" name="limits" value="${limit}" ${data.limits?.includes(limit)?'checked':''}> ${limit}</label>`).join('')}</div></fieldset>
+  ${dictationField('Actividades que puedes hacer y restricciones indicadas',`<textarea name="ability" rows="2" maxlength="1000">${esc(data.ability)}</textarea>`)}
+  ${dictationField('Alergias, intolerancias y alimentos difíciles de conseguir',`<textarea name="foods" rows="2" maxlength="1000">${esc(data.foods)}</textarea>`)}
+  <button class="primary">Guardar evaluación y ver resultado</button></form>
+  ${data.date?`<div class="meal"><h3>Resultado de evaluación inicial</h3>
+    ${bmi?.value!=null?`<p><strong>IMC ${format(bmi.value)} kg/m²</strong> · ${bmi.category} · ${bmi.years} años.</p>`:
+      `<p>${bmi?'Las categorías de este test se aplican desde los 20 años.':'Completa el peso inicial, la estatura y la fecha de nacimiento para calcular el IMC.'}</p>`}
+    <p>El IMC es un indicador inicial. Los antecedentes, la cintura y las mediciones disponibles también se revisan con el profesional. El IMC no mide tu grasa corporal o visceral ni establece un diagnóstico.</p>
+    ${bmi?.value>=25?'<p>En adultos, el sobrepeso y la obesidad se asocian con mayor riesgo de diabetes tipo 2 e hipertensión. El IMC por sí solo no estima tu riesgo individual.</p>':''}
+    <a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Ver categorías del IMC para adultos · CDC</a>
+    <p class="muted">${state.assessedPlan?.date?'Hay una orientación publicada en Programa.':'Pendiente de revisión antes de personalizar el programa.'}</p></div>`:''}
+  </section>`;
+}
+function assessedPlanCard(edit=false) {
+  const plan=state.assessedPlan||{};
+  const fields={food:'Alimentación y porciones en gramos',drinks:'Bebidas y alimentos que conviene limitar según la indicación recibida',movement:'Actividad indicada, alternativas y ejercicios que se deben evitar'};
+  if(edit) return `<section class="card ui-card accent-amber"><form id="assessed-plan" class="stack"><h2>Orientaciones del programa</h2><p>Transcribe las indicaciones revisadas por el profesional para este cliente.</p>
+    ${Object.entries(fields).map(([key,label])=>dictationField(label,`<textarea name="${key}" rows="2" maxlength="2000">${esc(plan[key])}</textarea>`)).join('')}<button class="primary">Guardar orientaciones en Programa</button></form></section>`;
+  if(!plan.date) return '';
+  return `<section class="card ui-card accent-amber"><h2>Orientaciones de mi programa</h2>${Object.entries(fields).filter(([key])=>plan[key]).map(([key,label])=>`<h3>${label}</h3><p class="assessment-text">${esc(plan[key])}</p>`).join('')}</section>`;
+}
 function profile() {
   const fields = {'name':'Nombre','born':'Fecha de nacimiento','height':'Estatura (cm)','sleep':'Horas de sueño','objective':'Objetivo y motivación','health':'Condiciones y medicamentos reportados','habits':'Comidas habituales, snacks y obstáculos'};
   return `${sectionBanner('profile','Ficha de seguimiento','Guarda tu punto de partida y ajusta tus recordatorios.','Persona tomando notas en un diario')}<section class="card ui-card"><form id="profile" class="stack"><h2>Evaluación inicial</h2>
   <div class="fields">${Object.entries(fields).map(([key,label])=>['objective','health','habits'].includes(key)
     ? dictationField(label,`<textarea name="${key}" rows="3">${esc(state.profile[key])}</textarea>`)
     : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
-  ${account?.role==='admin'?advisorNotes():''}
+  ${assessmentCard()}
+  ${account?.role==='admin'?assessedPlanCard(true)+advisorNotes():''}
   <section class="card ui-card accent-purple"><form id="daily-reminder" class="stack"><h2>Mis recordatorios diarios</h2><p class="muted">Añade una hora por aviso. Puedes programar varios para el agua, tus medicamentos u otras actividades.</p>
   <label>Tipo<select name="kind"><option>Medicamento</option><option>Gotas</option><option>Agua</option><option>Otro</option></select></label>
   ${dictationField('Qué debe decir','<input name="label" required maxlength="180" placeholder="Ejemplo: tomar mi pastilla">')}
@@ -794,6 +844,11 @@ function openClientTracking(id, date) {
   openDialog(`<section class="stack"><h2>Seguimiento diario · ${esc(person.name)}</h2>
     <div class="row">${action('Informe PDF','client-report',id+'|'+first,'primary')}${action('Semana anterior','client-tracking',id+'|'+shift(first,-7))}${action('Semana siguiente','client-tracking',id+'|'+shift(first,7))}</div>
     <p>${esc(pretty(first))} a ${esc(pretty(days[6]))}</p>
+    <form class="empty stack" id="weekly-review" data-client="${esc(id)}" data-week="${first}">
+      <strong>Revisión de la semana</strong>
+      ${Object.entries({obstacle:'Qué le costó',adjustment:'Qué ajuste acordaron',next:'Qué revisarán la próxima semana'}).map(([key,label])=>`<label>${label}<textarea name="${key}" rows="2" maxlength="1000">${esc(record.weeklyReviews?.[first]?.[key])}</textarea></label>`).join('')}
+      <button class="primary">Guardar revisión</button>
+    </form>
     <div class="empty"><strong>Ficha</strong><p>${missing.length?'Campos sin completar: '+esc(missing.join(', ')):'Datos principales registrados.'}</p><a href="${esc(clientLink(id,'Ficha'))}">Abrir ficha</a></div>
     <div class="empty"><strong>Programa</strong><p>${planned} de 7 días con menú elegido.</p><a href="${esc(clientLink(id,'Programa',first))}">Abrir programa</a></div>
     <div class="empty"><strong>Progreso</strong><p>${logged} de 7 días con actividad registrada.</p><a href="${esc(clientLink(id,'Progreso',first))}">Ver gráfico, medidas y fotos</a></div>
@@ -854,6 +909,7 @@ function clientReport(id,start,end) {
       <h3>Datos de la ficha</h3><ul>${Object.entries(fields).filter(([key])=>record.profile?.[key]).map(([key,label])=>`<li><strong>${label}:</strong> ${esc(record.profile[key])}</li>`).join('')}</ul>
       <p>Las calorías corresponden a la ingesta registrada. El ejercicio se presenta por separado.</p>
       ${sections}
+      ${Object.entries(record.weeklyReviews||{}).filter(([key])=>key<=end&&shift(key,6)>=start).map(([key,review])=>`<section class="report-day"><h3>Revisión de la semana del ${esc(pretty(key))}</h3><p>Obstáculo: ${esc(review.obstacle)} · Ajuste: ${esc(review.adjustment)} · Próxima revisión: ${esc(review.next)}</p></section>`).join('')}
       ${notes.length?`<h3>Notas del asesor</h3><ul>${notes.map(note=>`<li>${esc(note.date)} · ${esc(note.type)} · ${esc(note.text)} ${esc(note.reason)}</li>`).join('')}</ul>`:''}
     </article></div>`);
 }
@@ -1185,6 +1241,18 @@ document.addEventListener('submit',event=>{
       window.scrollTo(0,0);
       return;
     }
+    case 'assessment': {
+      const entry=Object.fromEntries(data);
+      const hadAssessment=!!state.assessment?.date;
+      state.assessment={...entry,places:data.getAll('places'),limits:data.getAll('limits'),date:dateKey()};
+      if(!hadAssessment && Number(entry.weight)>0 && day(dateKey()).weight==null) editDay(dateKey()).weight=Number(entry.weight);
+      break;
+    }
+    case 'assessed-plan':
+      if(account.role!=='admin') return;
+      state.assessedPlan={...Object.fromEntries(data),date:dateKey()};
+      update('Orientaciones disponibles en Programa.');
+      return;
     case 'profile': {
       const profile=Object.fromEntries(data);
       if(client) {
@@ -1277,6 +1345,18 @@ document.addEventListener('submit',event=>{
       (record.trainingSets??={})[form.dataset.index]=sets;
       dialog.close();
       update('Series y cargas guardadas.');
+      return;
+    }
+    case 'weekly-review': {
+      if(account.role!=='admin') return;
+      const {client:id,week}=form.dataset;
+      if(!clients.some(item=>item.id===id)) return;
+      const record=client?.id===id?state:clientRecord(id);
+      (record.weeklyReviews??={})[week]=Object.fromEntries(data);
+      try {localStorage.setItem(clientKey(id),JSON.stringify(record));}
+      catch {return notify('No se pudo guardar la revisión.');}
+      dialog.close();
+      notify('Revisión semanal guardada.');
       return;
     }
     case 'client-report-form': {
