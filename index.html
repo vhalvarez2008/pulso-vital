@@ -338,7 +338,9 @@ function today() {
     return `<div class="meal today-meal"><div class="row between"><h3>${name}</h3><span class="pill meal-state" data-state="${entry?.status==='Omitida'?'skipped':entry?'done':scheduled?'pending':'empty'}">${entry?.status || (scheduled?'Pendiente':'Sin programar')}</span></div>
     <small>${time}${scheduled ? ' · '+esc(describe(scheduled)) : ''}</small>
     ${entry?.items?.length ? `<p>${esc(describe(entry.items))}</p>` : ''}
-    <div class="row meal-buttons">${scheduled?action('✓ Comí lo planeado','confirm',name,'primary'):''}${action(entry?'Editar registro':scheduled?'✕ Cambiar u omitir':'Registrar comida','meal',name)}</div></div>`;
+    <div class="row meal-buttons">${scheduled?action('✓ Comí lo planeado','confirm',name,'primary'):''}
+    ${action(entry?.status==='Omitida'?'Registrar lo que comí':entry?'Editar registro':scheduled?'Cambiar comida':'Registrar comida','meal',name)}
+    ${entry?.status==='Omitida'?action('Deshacer omisión','undo-meal-skip',name):!entry?action('Omitir','skip',name):''}</div></div>`;
   }).join('')}</section></div>
   <aside>${state.dailyReminders?.length?`<section class="card"><h2>Recordatorios</h2>${state.dailyReminders.map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.kind)}</h3><p>${esc(item.label)}</p><small>${esc(record.reminderAnswers?.[item.id] || 'Sin respuesta')}</small></div>`).join('')}</section>`:''}<section class="card ui-card accent-blue"><h2>Agua</h2><strong class="stat">${format(record.water ?? 0)} ml</strong>
   <div class="row">${action('+250 ml','water',250)}${action('+500 ml','water',500)}${action('Editar','water-edit')}</div></section>
@@ -941,8 +943,8 @@ function foodRow(item) {
 }
 function recordMeal(name,status,items) {
   (editDay().entries ??= {})[name] = {status,items};
-  dialog.close();
-  update('Comida registrada.');
+  if(dialog.open) dialog.close();
+  update(status==='Omitida'?'Comida marcada como omitida.':'Comida registrada.');
 }
 let dbPromise;
 function database() {
@@ -1335,6 +1337,13 @@ document.addEventListener('click',async event=>{
     case 'meal':mealDialog(arg);break;
     case 'confirm':recordMeal(arg,'Comí lo planeado',plan()[arg]);break;
     case 'skip':recordMeal(arg,'Omitida',[]);break;
+    case 'undo-meal-skip': {
+      const entries=day().entries;
+      if(entries?.[arg]?.status!=='Omitida') break;
+      delete entries[arg];
+      update(plan()[arg]?'Omisión deshecha. La comida vuelve a Pendiente.':'Omisión deshecha. La comida queda Sin programar.');
+      break;
+    }
     case 'close':dialog.close();break;
     case 'menu-template':menuTemplateDialog(...arg.split('|'));break;
     case 'menu-template-remove': {
