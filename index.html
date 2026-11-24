@@ -326,6 +326,22 @@ function reminderMessage(name) {
     : 'Te recuerdo que es hora de registrar tu '+name.toLowerCase()+'. Abre el registro para agregar los alimentos y las cantidades que comiste. Si omitiste esta comida, también puedes marcarlo aquí.';
   return greeting+(firstName?', '+firstName:'')+'. Qué gusto acompañarte. '+text;
 }
+function remindersForDay(record,key) {
+  const weekday=parseDate(key).getDay();
+  const scheduled=(state.dailyReminders||[]).map(item=>({
+    time:item.time,title:item.kind,text:item.label,answer:record.reminderAnswers?.[item.id]
+  }));
+  for(const item of mealAlerts()) {
+    if(item.date?item.date!==key:item.weekdays&&!item.weekdays.includes(weekday)) continue;
+    scheduled.push({time:item.time,title:item.meal,text:'Aviso de comida',answer:record.entries?.[item.meal]?.status});
+  }
+  const rule=state.waterInterval;
+  if(rule?.enabled) scheduled.push({time:rule.start,title:'Agua por intervalos',text:`Cada ${rule.minutes} min · de ${rule.start} a ${rule.end}`,interval:true});
+  if(state.reminder&&!waterIntervalMatches(rule,state.reminder)) scheduled.push({time:state.reminder,title:'Agua',text:'Aviso a hora fija'});
+  return `<section class="card ui-card accent-blue"><div class="row between"><h2>Recordatorios del día</h2>${action('Configurar','page','Ficha')}</div>
+    ${scheduled.length?scheduled.sort((a,b)=>a.time.localeCompare(b.time)).map(item=>`<div class="meal"><h3>${item.interval?'':esc(item.time)+' · '}${esc(item.title)}</h3><p>${esc(item.text)}</p>${item.answer?`<small>${esc(item.answer)}</small>`:''}</div>`).join(''):'<p class="muted">No hay avisos programados para esta fecha.</p>'}
+  </section>`;
+}
 function today() {
   const record = day();
   const totals = intake(record);
@@ -342,7 +358,7 @@ function today() {
     ${action(entry?.status==='Omitida'?'Registrar lo que comí':entry?'Editar registro':scheduled?'Cambiar comida':'Registrar comida','meal',name)}
     ${entry?.status==='Omitida'?action('Deshacer omisión','undo-meal-skip',name):!entry?action('Omitir','skip',name):''}</div></div>`;
   }).join('')}</section></div>
-  <aside>${state.dailyReminders?.length?`<section class="card"><h2>Recordatorios</h2>${state.dailyReminders.map(item=>`<div class="meal"><h3>${esc(item.time)} · ${esc(item.kind)}</h3><p>${esc(item.label)}</p><small>${esc(record.reminderAnswers?.[item.id] || 'Sin respuesta')}</small></div>`).join('')}</section>`:''}<section class="card ui-card accent-blue"><h2>Agua</h2><strong class="stat">${format(record.water ?? 0)} ml</strong>
+  <aside>${remindersForDay(record,selected)}<section class="card ui-card accent-blue"><h2>Agua</h2><strong class="stat">${format(record.water ?? 0)} ml</strong>
   <div class="row">${action('+250 ml','water',250)}${action('+500 ml','water',500)}${action('Editar','water-edit')}</div></section>
   <section class="card ui-card accent-amber"><h2>Calorías registradas</h2><strong class="stat">${totals.total} kcal</strong><small>Estimadas con los alimentos registrados.${totals.missing?` ${totals.missing} ingrediente(s) con datos pendientes.`:''}</small></section>
   <section class="card ui-card accent-purple"><form id="weight" class="stack"><h2>Peso del día</h2><label>Kilogramos<input name="weight" type="number" min="1" max="700" step="0.1" value="${esc(record.weight)}" required></label><button class="primary">Guardar peso</button></form></section></aside></div>`;
