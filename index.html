@@ -77,7 +77,6 @@ body:has(#login:not([hidden])){min-height:100dvh;background:linear-gradient(115d
 <style>.rest-clock{display:inline-block;min-width:4.6rem;text-align:center;padding:.45rem .65rem;border-radius:10px;background:#e3efe5;color:#244f40;font-size:1.2rem;font-weight:750;font-variant-numeric:tabular-nums}.meal h4{margin:0 0 .35rem}</style>
 <style>.check-input{width:auto;margin:0}</style>
 <style>.meal-weekdays{border:1px solid var(--line);border-radius:12px;padding:.65rem}.meal-date[hidden]{display:none}</style>
-<style>.closed-card{max-width:380px;margin:auto;border-radius:20px;background:#f4f7f5;text-align:center}</style>
 <style>
 .programme-card{border-top:4px solid var(--programme-accent,#398064)}
 .programme-card h2{color:var(--programme-ink,#244f40)}
@@ -820,13 +819,14 @@ function passwordField(autocomplete) {
   return `<div class="password-field"><label>Contraseña<input name="password" type="password" autocomplete="${autocomplete}" minlength="8" required></label>
     ${action('Mostrar','toggle-password')}</div>`;
 }
-function sessionClosedScreen() {
+function hideClosedApp() {
   app.hidden=true;
   intro.hidden=true;
-  login.hidden=false;
-  login.inert=false;
-  login.classList.remove('waiting-for-intro');
-  login.innerHTML='<section class="login-card closed-card"><h1>Sesión cerrada</h1><p>Puedes cerrar esta ventana.</p></section>';
+  login.hidden=true;
+  notice.hidden=true;
+  main.replaceChildren();
+  login.replaceChildren();
+  dialog.replaceChildren();
 }
 function loginScreen() {
   app.hidden=true;
@@ -1586,25 +1586,27 @@ document.addEventListener('click',async event=>{
     button.setAttribute('aria-pressed',String(visible));
     return;
   }
-  if(!account || (isTrialAccount()&&!['logout','trial-back','trial-restart'].includes(command))) return;
+  if(!account || (isTrialAccount()&&!['logout','logout-confirm','close','trial-back','trial-restart'].includes(command))) return;
   switch(command) {
     case 'trial-back':trialStep=Math.max(0,trialStep-1);render();break;
     case 'trial-restart':trialStep=0;trialEditing=true;render();break;
-    case 'logout': {
+    case 'logout':
+      openDialog(`<section class="stack"><h2>¿Estás seguro de salir?</h2><div class="row">
+        <button type="button" data-action="close" autofocus>No, continuar</button>
+        ${action('Sí, salir','logout-confirm','','primary')}
+      </div></section>`);
+      break;
+    case 'logout-confirm': {
       sessionStorage.removeItem(sessionKey);
       account=undefined;
-      app.hidden=true;
-      intro.hidden=true;
-      login.hidden=true;
-      notice.hidden=true;
       clearTimeout(introTimer);
       clearInterval(videoTimer);
       clearInterval(reminderTimer);
       activeDictation?.recognition.abort();
       if(dialog.open) dialog.close();
       window.speechSynthesis?.cancel();
+      hideClosedApp();
       window.close();
-      if(!window.closed) sessionClosedScreen();
       break;
     }
     case 'client-access': {
@@ -1907,7 +1909,7 @@ if(!closedScreen && account?.role==='client') {
   }
 }
 if(closedScreen) {
-  sessionClosedScreen();
+  hideClosedApp();
 } else {
   if(account && (account.role==='admin'||(client?.id===account.clientId && page!=='Clientes'))) {
     app.hidden=false;
