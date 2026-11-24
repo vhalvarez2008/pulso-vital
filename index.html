@@ -622,7 +622,7 @@ function adultBmi(born,weight,height,asOf=dateKey()) {
 const trialQuestions=[
   {key:'age',title:'¿Cuántos años tienes?',kind:'number',min:1,max:120},
   {key:'weight',title:'¿Cuánto pesas actualmente?',kind:'weight',min:1,max:1544},
-  {key:'height',title:'¿Cuánto mides en centímetros?',kind:'number',min:30,max:300},
+  {key:'height',title:'¿Cuál es tu estatura?',kind:'height'},
   {key:'goal',title:'¿Qué te gustaría lograr?',kind:'select',options:['Bajar de peso','Mejorar mis hábitos','Moverme más','Mantener mi peso','Todavía no lo sé']},
   {key:'work',title:'¿Cuántas horas trabajas en un día habitual?',kind:'select',options:['No trabajo actualmente','Menos de 4 horas','De 4 a 8 horas','Más de 8 horas','Mi horario varía','Prefiero no responder']},
   {key:'time',title:'¿Cuánto tiempo tienes para moverte?',kind:'select',options:['Menos de 15 minutos al día','De 15 a 30 minutos al día','Más de 30 minutos al día','Depende del día','Aún no sé']},
@@ -662,6 +662,16 @@ function trialResult(answers) {
     <div class="row">${isTrialAccount()?action('Revisar mis respuestas','trial-restart') : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
   </section>`;
 }
+function parseTrialHeight(input) {
+  const value=String(input??'').trim().toLowerCase().replace(/,/g,'.');
+  const full=value.match(/^(\d+)\s*(?:metros?|m)\s*(\d{1,2})\s*(?:cm)?$/);
+  if(full) return Number(full[1])*100+Number(full[2]);
+  const numeric=value.match(/^(\d+(?:\.\d+)?)\s*(cm|m|metros?)?$/);
+  if(!numeric) return NaN;
+  const amount=Number(numeric[1]);
+  if(numeric[2]==='cm') return amount;
+  return numeric[2]||amount<=3?amount*100:amount;
+}
 function trialView() {
   const answers=state.trialAnswers||{};
   if(answers.completed&&!trialEditing) return trialResult(answers);
@@ -669,9 +679,11 @@ function trialView() {
   const value=answers[question.key];
   const control=question.kind==='select'
     ? `<select name="answer" required><option value="">Elige una respuesta</option>${question.options.map(option=>`<option ${option===value?'selected':''}>${esc(option)}</option>`).join('')}</select>`
-    : `<input name="answer" type="number" inputmode="${question.key==='age'?'numeric':'decimal'}" min="${question.min}" max="${question.max}" step="${question.key==='age'?'1':'any'}" required value="${esc(value)}">`;
+    : question.kind==='height'
+      ? `<input name="answer" type="text" inputmode="decimal" maxlength="24" required placeholder="Ejemplo: 180" value="${esc(value)}" aria-describedby="trial-height-help"><small id="trial-height-help">Escribe 180 en centímetros. También puedes escribir 1,80 o 1 metro 80.</small>`
+      : `<input name="answer" type="number" inputmode="${question.key==='age'?'numeric':'decimal'}" min="${question.min}" max="${question.max}" step="${question.key==='age'?'1':'any'}" required value="${esc(value)}">`;
   return `<section class="card ui-card trial-card"><p class="pill">Test de prueba · Pregunta ${trialStep+1} de ${trialQuestions.length}</p><progress value="${trialStep+1}" max="${trialQuestions.length}" aria-label="Avance del test"></progress>
-    <form class="stack" id="trial-step"><h1>${question.title}</h1><label>Tu respuesta${control}</label>
+    <form class="stack" id="trial-step"><h1>${question.title}</h1><label>${question.kind==='height'?'Centímetros (cm)':'Tu respuesta'}${control}</label>
     ${question.kind==='weight'?`<label>Unidad<select name="unit"><option value="kg">Kilos (kg)</option><option value="lb" ${answers.unit==='lb'?'selected':''}>Libras (lb)</option></select></label>`:''}
     <div class="row">${trialStep?action('Atrás','trial-back'):''}<button class="primary">${trialStep===trialQuestions.length-1?'Ver resultado':'Continuar'}</button></div></form></section>`;
 }
@@ -1399,7 +1411,8 @@ document.addEventListener('submit',event=>{
       if(!isTrialAccount()) return;
       const question=trialQuestions[trialStep];
       const input=data.get('answer');
-      const value=question.kind==='select'?input:Number(input);
+      const value=question.kind==='select'?input:question.kind==='height'?parseTrialHeight(input):Number(input);
+      if(question.kind==='height'&&!(value>=30&&value<=300)) return notify('Revisa la estatura. Por ejemplo, escribe 180, 1,80 o 1 metro 80.');
       const unit=data.get('unit');
       if(question.kind==='weight'&&value*(unit==='lb'?.45359237:1)>700) return notify('Revisa el peso y la unidad ingresados.');
       const answers=(state.trialAnswers??={});
