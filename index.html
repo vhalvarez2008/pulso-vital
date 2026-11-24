@@ -143,6 +143,7 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
 .guide-content img{display:block;width:min(100%,520px);height:auto;border-radius:10px}.guide-steps{padding-left:1.6rem;margin-bottom:.25rem}.guide-steps li{padding:.45rem .2rem;border-bottom:1px solid var(--line)}.guide-steps li::marker{color:#2a6448;font-weight:bold}.guide-steps p{margin:.25rem 0}
 .price-grid .empty{background:#fff6e8;border-style:solid}.price-grid strong{font-size:1.45rem;color:#785023}
 </style>
+<style>.received-answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:8px}.received-answers dt{font-weight:700}.received-answers dd{margin:.3rem 0 0;white-space:pre-wrap}</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -843,14 +844,41 @@ function assessedPlanCard(edit=false) {
   return `<section class="card ui-card accent-amber"><h2>Orientaciones de mi programa</h2>${Object.entries(fields).filter(([key])=>plan[key]).map(([key,label])=>`<h3>${label}</h3><p class="assessment-text">${esc(plan[key])}</p>`).join('')}
   ${plan.video?.startsWith('https://')?`<a href="${esc(plan.video)}" target="_blank" rel="noopener noreferrer">Ver video indicado por mi asesor</a>`:''}</section>`;
 }
+function receivedAssessment() {
+  const data=state.assessment;
+  const trial=state.trialAnswers;
+  const submitted=trial?.completed||data?.date;
+  const answers=[
+    ['Estatura',state.profile.height?state.profile.height+' cm':null],
+    ['Sueño habitual',state.profile.sleep?state.profile.sleep+' h':null],
+    ['Objetivo',state.profile.objective],
+    ['Condiciones o medicamentos reportados',state.profile.health],
+    ['Hábitos y obstáculos',state.profile.habits],
+    ...assessmentFields.map(([key,label])=>[label,data?.[key]]),
+    ['Dónde puede entrenar',data?.places?.join(', ')],
+    ['Dificultades',data?.limits?.join(', ')],
+    ['Actividades y restricciones reportadas',data?.ability],
+    ['Alimentos o alergias reportadas',data?.foods],
+    ['Grasa visceral reportada',data?.visceral]
+  ].filter(([,value])=>value!=null&&String(value).trim());
+  const bmi=adultBmi(state.profile.born,data?.weight,state.profile.height, data?.date||dateKey());
+  return `<section class="card ui-card accent-purple"><h2>Respuestas del cliente</h2>
+    <p class="muted">${submitted?'Evaluación guardada el '+esc(pretty(submitted))+'.':'Aún no hay una evaluación completada.'} Aquí aparecen los registros disponibles en este navegador.</p>
+    ${bmi?.value!=null?`<p><strong>IMC inicial:</strong> ${format(bmi.value)} kg/m² · ${esc(bmi.category)}.</p>`:''}
+    ${answers.length?`<dl class="received-answers">${answers.map(([label,value])=>`<div class="empty"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`:''}
+    ${action('Seguimiento diario','client-tracking',client.id,'primary')}
+  </section>${trial?.completed?trialResult(trial):''}`;
+}
 function profile() {
   const fields = {'name':'Nombre','born':'Fecha de nacimiento','height':'Estatura (cm)','sleep':'Horas de sueño','objective':'Objetivo y motivación','health':'Condiciones y medicamentos reportados','habits':'Comidas habituales, snacks y obstáculos'};
-  return `${sectionBanner('profile','Ficha de seguimiento','Guarda tu punto de partida y ajusta tus recordatorios.','Persona tomando notas en un diario')}<section class="card ui-card"><form id="profile" class="stack"><h2>Evaluación inicial</h2>
+  const viewingClient=account?.role==='admin'&&!!client;
+  return `${sectionBanner('profile','Ficha de seguimiento','Guarda tu punto de partida y ajusta tus recordatorios.','Persona tomando notas en un diario')}
+  ${viewingClient?receivedAssessment()+'<details class="card"><summary>Corregir datos de la ficha</summary>':''}
+  <section class="card ui-card"><form id="profile" class="stack"><h2>${viewingClient?'Datos de la ficha':'Evaluación inicial'}</h2>
   <div class="fields">${Object.entries(fields).map(([key,label])=>['objective','health','habits'].includes(key)
     ? dictationField(label,`<textarea name="${key}" rows="3">${esc(state.profile[key])}</textarea>`)
-    : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
-  ${isTrialAccount()?`<section class="card"><h2>Test de prueba</h2><p>${esc(trialAccessText())}</p>${action('Ver resultado del test','trial-show-result')}</section>`:assessmentCard()}
-  ${account?.role==='admin'&&state.trialAnswers?.completed?trialResult(state.trialAnswers):''}
+    : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>${viewingClient?'</details>':''}
+  ${viewingClient?'':isTrialAccount()?`<section class="card"><h2>Test de prueba</h2><p>${esc(trialAccessText())}</p>${action('Ver resultado del test','trial-show-result')}</section>`:assessmentCard()}
   ${account?.role==='admin'?assessedPlanCard(true)+advisorNotes():''}
   <section class="card ui-card accent-purple"><form id="late-checks" class="stack"><h2>Aviso de registros pendientes</h2>
   <label class="row"><input class="check-input" type="checkbox" name="enabled" ${state.lateChecks?'checked':''}> Recordarme por voz si un registro sigue pendiente después de 15 minutos</label>
@@ -1074,7 +1102,7 @@ function openClientTracking(id, date) {
       ${Object.entries({obstacle:'Qué le costó',adjustment:'Qué ajuste acordaron',next:'Qué revisarán la próxima semana'}).map(([key,label])=>`<label>${label}<textarea name="${key}" rows="2" maxlength="1000">${esc(record.weeklyReviews?.[first]?.[key])}</textarea></label>`).join('')}
       <button class="primary">Guardar revisión</button>
     </form>
-    <div class="empty"><strong>Ficha</strong><p>${missing.length?'Campos sin completar: '+esc(missing.join(', ')):'Datos principales registrados.'}</p><a href="${esc(clientLink(id,'Ficha'))}">Abrir ficha</a></div>
+    <div class="empty"><strong>Ficha</strong><p>${record.trialAnswers?.completed||record.assessment?.date?'Evaluación disponible. ':'Evaluación pendiente. '}${missing.length?'Campos sin completar: '+esc(missing.join(', ')):'Datos principales registrados.'}</p><a href="${esc(clientLink(id,'Ficha'))}">Abrir ficha</a></div>
     <div class="empty"><strong>Programa</strong><p>${planned} de 7 días con menú elegido.</p><a href="${esc(clientLink(id,'Programa',first))}">Abrir programa</a></div>
     <div class="empty"><strong>Progreso</strong><p>${logged} de 7 días con actividad registrada.</p><a href="${esc(clientLink(id,'Progreso',first))}">Ver gráfico, medidas y fotos</a></div>
     <details class="programme-fold tracking-exercises"><summary>Ejercicios registrados · ${exerciseLogs.length}</summary>
@@ -1659,6 +1687,7 @@ document.addEventListener('submit',event=>{
       update('Preferencia de avisos pendientes guardada.');
       return;
     case 'assessment': {
+      if(account.role==='admin'&&client) return;
       const entry=Object.fromEntries(data);
       const hadAssessment=!!state.assessment?.date;
       state.assessment={...entry,places:data.getAll('places'),limits:data.getAll('limits'),date:dateKey()};
