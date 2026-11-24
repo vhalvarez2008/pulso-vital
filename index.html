@@ -122,11 +122,22 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
 </style>
 <style>.assessment-text{white-space:pre-wrap}</style>
 <style>.client-row{--fold-bg:#e9f3ea;--fold-ink:#244f40}.tracking-exercises{--fold-bg:#efe9f7;--fold-ink:#58437e}</style>
+<style>
+.mobile-nav{display:none}
+@media(max-width:650px){
+  #app main{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+  .mobile-nav{position:fixed;z-index:8;bottom:0;left:0;right:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:7px 12px max(8px,env(safe-area-inset-bottom));background:#f7fbf8f7;border-top:1px solid #cfe0d3;box-shadow:0 -5px 20px #26463518}
+  .mobile-nav button{display:grid;justify-items:center;gap:1px;min-height:49px;padding:3px 6px;border-color:transparent;background:transparent;font-size:.77rem;font-weight:680}
+  .mobile-nav button span{font-size:1.35rem;line-height:1.05}
+  .mobile-nav button[aria-current=page]{background:#dcefe1;color:#184532}
+  #notice{bottom:calc(75px + env(safe-area-inset-bottom))}
+}
+</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
 <section id="login" class="wrap login-shell" hidden></section><div id="app" hidden><header><div class="wrap top"><div class="brand"><span class="brand-mark" aria-hidden="true"></span> Pulso <strong>Vital</strong></div><div class="row account-actions"><button type="button" data-action="logout">Cerrar sesión</button></div></div></header>
-<div class="wrap"><nav class="nav" aria-label="Secciones" id="nav"></nav><main id="main"></main></div>
+<div class="wrap"><nav class="nav" aria-label="Secciones" id="nav"></nav><main id="main"></main></div><nav id="mobile-nav" class="mobile-nav" aria-label="Accesos rápidos"></nav>
 </div><dialog id="dialog"></dialog><div id="notice" role="status" hidden></div>
 <script>
 'use strict';
@@ -134,6 +145,7 @@ const main = document.querySelector('#main');
 const dialog = document.querySelector('#dialog');
 const notice = document.querySelector('#notice');
 const nav = document.querySelector('#nav');
+const mobileNav = document.querySelector('#mobile-nav');
 const intro = document.querySelector('#intro');
 const app = document.querySelector('#app');
 const login = document.querySelector('#login');
@@ -979,6 +991,8 @@ function render() {
   main.dataset.page = page;
   const visibleSections=sections.filter(section=>account?.role!=='client'||section!=='Clientes');
   nav.innerHTML = visibleSections.map(section=>`<button type="button" data-action="page" data-arg="${section}" aria-current="${section===page}">${section}</button>`).join('');
+  mobileNav.innerHTML = [['Hoy','⌂'],['Programa','▦'],['Progreso','↗']].map(([section,icon])=>
+    `<button type="button" data-action="page" data-arg="${section}" aria-current="${section===page?'page':'false'}"><span aria-hidden="true">${icon}</span>${section}</button>`).join('');
   const scope = client ? `<div class="client-context">Ficha de <strong>${esc(client.name)}</strong> · ${account?.role==='client'?'Acceso de cliente':`<a href="${esc(clientLink(null,'Clientes'))}">Volver a Clientes</a>${client.sample?' · Registros ficticios':' · '+action('Simular una semana','sample-week',client.id)}`}</div>` : '';
   main.innerHTML = scope+({Hoy:today,Programa:programme,Progreso:progress,Ficha:profile,Clientes:clientPanel,Ayuda:help})[page]();
   if(oldPage!==page && typeof main.animate==='function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -1448,7 +1462,13 @@ document.addEventListener('click',async event=>{
       </form>`);
       break;
     }
-    case 'page':if(arg==='Clientes'&&account.role!=='admin') break;page=arg;render();break;
+    case 'page':
+      if(arg==='Clientes'&&account.role!=='admin') break;
+      page=arg;
+      render();
+      window.scrollTo(0,0);
+      if(button.closest('#mobile-nav')) mobileNav.querySelector('[aria-current=page]')?.focus({preventScroll:true});
+      break;
     case 'report-day':selected=arg;reportRange='day';render();window.scrollTo(0,0);break;
     case 'open-sample-day':selected=arg;page='Hoy';render();window.scrollTo(0,0);break;
     case 'client-report':showClientReport(...arg.split('|'));break;
