@@ -77,6 +77,7 @@ body:has(#login:not([hidden])){min-height:100dvh;background:linear-gradient(115d
 <style>.rest-clock{display:inline-block;min-width:4.6rem;text-align:center;padding:.45rem .65rem;border-radius:10px;background:#e3efe5;color:#244f40;font-size:1.2rem;font-weight:750;font-variant-numeric:tabular-nums}.meal h4{margin:0 0 .35rem}</style>
 <style>.check-input{width:auto;margin:0}</style>
 <style>.meal-weekdays{border:1px solid var(--line);border-radius:12px;padding:.65rem}.meal-date[hidden]{display:none}</style>
+<style>.closed-card{max-width:380px;margin:auto;border-radius:20px;background:#f4f7f5;text-align:center}</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -223,6 +224,7 @@ let comparison = '';
 let reportRange='week';
 let reportComparison='';
 let videoTimer;
+let reminderTimer;
 const restTimers = new Map();
 let activeDictation;
 let lastNotice;
@@ -586,6 +588,14 @@ function openSampleWeek(sourceId, period = false) {
 function passwordField(autocomplete) {
   return `<div class="password-field"><label>Contraseña<input name="password" type="password" autocomplete="${autocomplete}" minlength="8" required></label>
     ${action('Mostrar','toggle-password')}</div>`;
+}
+function sessionClosedScreen() {
+  app.hidden=true;
+  intro.hidden=true;
+  login.hidden=false;
+  login.inert=false;
+  login.classList.remove('waiting-for-intro');
+  login.innerHTML='<section class="login-card closed-card"><h1>Sesión cerrada</h1><p>Puedes cerrar esta ventana.</p></section>';
 }
 function loginScreen() {
   app.hidden=true;
@@ -1132,11 +1142,12 @@ document.addEventListener('click',async event=>{
       notice.hidden=true;
       clearTimeout(introTimer);
       clearInterval(videoTimer);
+      clearInterval(reminderTimer);
       activeDictation?.recognition.abort();
       if(dialog.open) dialog.close();
       window.speechSynthesis?.cancel();
-      if(window.opener || window.history.length===1) window.close();
-      if(!window.closed) location.replace('about:blank');
+      window.close();
+      if(!window.closed) sessionClosedScreen();
       break;
     }
     case 'client-access': {
@@ -1374,16 +1385,14 @@ if(!closedScreen && account?.role==='client') {
   }
 }
 if(closedScreen) {
-  app.hidden=true;
-  login.hidden=true;
-  location.replace('about:blank');
+  sessionClosedScreen();
 } else {
   if(account && (account.role==='admin'||(client?.id===account.clientId && page!=='Clientes'))) {
     app.hidden=false;
     document.querySelector('.account-actions [data-action=intro]').hidden=account.role!=='admin';
     document.querySelector('.account-actions [data-action=logout]').setAttribute('aria-label',account.role==='admin'?'Cerrar sesión de administrador':'Cerrar sesión de cliente');
     render();
-    setInterval(checkReminders,5000);
+    reminderTimer=setInterval(checkReminders,5000);
   } else if(!account) {
     loginScreen();
   }
