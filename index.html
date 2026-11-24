@@ -74,6 +74,7 @@ body:has(#login:not([hidden])){min-height:100dvh;background:linear-gradient(115d
 .login-card .primary{background:#285640;border-color:#285640}
 </style>
 <style>.access-status{margin:0;padding:.6rem .75rem;border-radius:9px;background:#fff0e7;color:#733619}</style>
+<style>.rest-clock{display:inline-block;min-width:4.6rem;text-align:center;padding:.45rem .65rem;border-radius:10px;background:#e3efe5;color:#244f40;font-size:1.2rem;font-weight:750;font-variant-numeric:tabular-nums}.meal h4{margin:0 0 .35rem}</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -144,9 +145,31 @@ const menus = {
   D:{'Almuerzo':plate(120),'Media tarde':snack,'Merienda':plate(100)}
 };
 const routines = [
-  ['Lunes · Torso','Press banca',4,8,180,'https://www.youtube.com/shorts/wLayV1XggbM'],
-  ['Miércoles · Pierna','Sentadilla hack',4,10,180,'https://www.youtube.com/shorts/itmlCUc0P3k'],
-  ['Viernes · Cuerpo completo','Peso muerto rumano',4,8,180,'https://www.youtube.com/shorts/8qNrTuZ0rXM']
+  ["Lunes · Torso", "Press Banca", 4, 8, 180, "https://www.youtube.com/shorts/wLayV1XggbM", "Aproximación"],
+  ["Miércoles · Pierna", "Sentadilla Hack", 4, 10, 180, "https://www.youtube.com/shorts/itmlCUc0P3k", "Aproximación"],
+  ["Viernes · Cuerpo completo", "Peso Muerto Rumano con Barra", 4, 8, 180, "https://www.youtube.com/shorts/8qNrTuZ0rXM", "Aproximación"],
+  ["Lunes · Torso", "Aperturas en Polea para Abajo", 3, 15, 90, "https://www.youtube.com/shorts/iXWbc8SF9KA", "Aproximación Ligera"],
+  ["Lunes · Torso", "Jalón al Pecho en Máquina", 4, 10, 150, "https://www.youtube.com/shorts/RD4t94XvKsU", "Aproximación"],
+  ["Lunes · Torso", "Remo en Máquina", 3, 10, 120, "https://www.youtube.com/shorts/iyOM6y5ADAQ", "Aproximación Ligera"],
+  ["Lunes · Torso", "Elevaciones Laterales", 3, 15, 90, "https://www.youtube.com/shorts/HiDviNtHLvQ", "Aproximación Ligera"],
+  ["Lunes · Torso", "Extensión de Tríceps en Polea", 3, 12, 90, "https://www.youtube.com/shorts/FELcywKlkqE", "Aproximación Ligera"],
+  ["Lunes · Torso", "Curl de Bíceps con Mancuernas", 3, 12, 90, "https://www.youtube.com/shorts/EdQXRXMnRYI", "Aproximación Ligera"],
+  ["Lunes · Torso", "Abdomen en Polea", 3, 15, 90, "https://www.youtube.com/shorts/p-kdPTKDgNs", "Aproximación Ligera"],
+  ["Miércoles · Pierna", "Prensa de Piernas", 3, 12, 150, "https://www.youtube.com/shorts/d-RBtJKPU_g", "Aproximación Ligera"],
+  ["Miércoles · Pierna", "Extensión de Cuádriceps en Máquina", 3, 15, 120, "https://www.youtube.com/shorts/RiWKdWsufUw", "Aproximación Ligera"],
+  ["Miércoles · Pierna", "Curl de Isquiotibiales Sentado", 4, 12, 120, "https://www.youtube.com/shorts/ftmElAFFezA", "Aproximación"],
+  ["Miércoles · Pierna", "Patada de Glúteo en Polea", 3, 12, 120, "https://www.youtube.com/shorts/B9Fqo0KqeWc", "Aproximación Ligera"],
+  ["Miércoles · Pierna", "Abducción en Máquina", 3, 15, 120, "https://www.youtube.com/shorts/Vw32LcBYYrI", "Aproximación Ligera"],
+  ["Miércoles · Pierna", "Elevación de Talones en Máquina", 4, 15, 120, "https://www.youtube.com/shorts/2RdPbdBO57g", "Aproximación"],
+  ["Miércoles · Pierna", "Pantorrilla Sentado", 3, 20, 120, "https://www.youtube.com/shorts/jpyhqVpnmVE", "Aproximación Ligera"],
+  ["Viernes · Cuerpo completo", "Prensa de Piernas", 3, 12, 150, "https://www.youtube.com/shorts/d-RBtJKPU_g", "Aproximación"],
+  ["Viernes · Cuerpo completo", "Remo en T Máquina (Agarre Ancho)", 4, 8, 150, "https://www.youtube.com/shorts/wY5liAnoYd0", "Aproximación"],
+  ["Viernes · Cuerpo completo", "Press de Pecho con Mancuernas en Banco", 3, 10, 150, "https://www.youtube.com/watch?v=jY0Z6Im2gmU", "Aproximación"],
+  ["Viernes · Cuerpo completo", "Elevaciones para Hombro Posterior", 3, 15, 90, "https://www.youtube.com/shorts/AkNlVr1JqsI", "Aproximación Ligera"],
+  ["Viernes · Cuerpo completo", "Curl Martillo", 3, 12, 90, "https://www.youtube.com/shorts/07D2fR_0iro", "Aproximación Ligera"],
+  ["Viernes · Cuerpo completo", "Elevación de Talones en Máquina", 3, 15, 120, "https://www.youtube.com/shorts/2RdPbdBO57g", "Aproximación"],
+  ["Viernes · Cuerpo completo", "Pantorrilla Sentado", 3, 20, 120, "https://www.youtube.com/shorts/jpyhqVpnmVE", "Aproximación Ligera"],
+  ["Viernes · Cuerpo completo", "Abdomen en Polea", 3, 15, 90, "https://www.youtube.com/shorts/p-kdPTKDgNs", "Aproximación Ligera"]
 ];
 const blank = () => ({days:{}, week:{}, notes:[], profile:{}, reminder:''});
 const params = new URLSearchParams(location.search);
@@ -198,6 +221,7 @@ let comparison = '';
 let reportRange='week';
 let reportComparison='';
 let videoTimer;
+const restTimers = new Map();
 let activeDictation;
 let lastNotice;
 let renderVersion = 0;
@@ -295,7 +319,48 @@ function programme() {
     const key=shift(first,i);
     return `<label>${esc(pretty(key))}<select data-menu-date="${key}">${menuOptions(menuChoice(key))}</select></label>`;
   }).join('')}</div></div>
-  <section class="card"><h2>Entrenamiento de ejemplo</h2><p class="muted">Registro del ${esc(pretty(selected))}. Usa el selector de fecha de arriba para cambiar de día.</p><div class="stack">${routines.map(([title,exercise,sets,reps,rest,url],index)=>`<div class="meal"><h3>${title}</h3><p>${exercise} · ${sets} series de ${reps} · ${rest/60} min de descanso</p><div class="row"><a href="${url}" target="_blank" rel="noopener noreferrer">Ver video</a>${action('Iniciar descanso','timer',rest)}${action(day().training?.[index]?'✓ Realizado · Desmarcar':'Marcar realizado','training',index)}${action(day().training?.[index]?.alternative?'Editar ejercicio realizado':'Hice otro ejercicio','training-alternative',index)}</div>${day().training?.[index]?.alternative?`<p>Ejercicio realizado: <strong>${esc(day().training[index].alternative)}</strong></p>`:''}</div>`).join('')}</div><p id="timer" role="status"></p></section>`;
+  ${trainingSection()}`;
+}
+function trainingDate(index) {
+  const title=routines[index][0];
+  const group=routines.slice(0,3).findIndex(routine=>routine[0]===title);
+  return shift(monday(selected),group*2);
+}
+function restLabel(seconds) {
+  return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
+}
+function restTime(key,rest) {
+  const end=restTimers.get(key);
+  return end==null?rest:Math.max(0,Math.ceil((end-Date.now())/1000));
+}
+function trainingSection() {
+  return `<section class="card"><h2>Entrenamiento semanal</h2><p class="muted">Los ejercicios se guardan en la fecha de su sesión. Cambia la semana con el selector de fecha de arriba.</p>
+  ${routines.slice(0,3).map(([title],group)=>`<section class="meal"><h3>${title}</h3><p class="muted">${esc(pretty(trainingDate(group)))}</p>
+    ${routines.map(([dayTitle,exercise,sets,reps,rest,url,warm],index)=>{
+      if(dayTitle!==title) return '';
+      const date=trainingDate(index);
+      const done=day(date).training?.[index];
+      const key=date+':'+index;
+      return `<article class="meal"><h4>${esc(exercise)}</h4><p>${sets} series de ${reps} · ${esc(warm)} · Descanso ${restLabel(rest)}</p>
+      <div class="row"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Ver video</a>${action(done?'✓ Realizado · Desmarcar':'Marcar realizado','training',index)}${action(done?.alternative?'Editar ejercicio realizado':'Hice otro ejercicio','training-alternative',index)}</div>
+      <div class="row meal-buttons">${action('Iniciar descanso','timer',index)}<output class="rest-clock" id="rest-${key}" aria-label="Tiempo de descanso" aria-live="off">${restLabel(restTime(key,rest))}</output></div>
+      ${done?.alternative?`<p>Ejercicio realizado: <strong>${esc(done.alternative)}</strong></p>`:''}</article>`;
+    }).join('')}</section>`).join('')}</section>`;
+}
+function tickRestTimers() {
+  for(const [key,end] of restTimers) {
+    const seconds=Math.max(0,Math.ceil((end-Date.now())/1000));
+    const output=document.getElementById('rest-'+key);
+    if(output) output.textContent=restLabel(seconds);
+    if(seconds===0) {
+      restTimers.delete(key);
+      speak('Terminó el descanso.');
+    }
+  }
+  if(!restTimers.size) {
+    clearInterval(videoTimer);
+    videoTimer=undefined;
+  }
 }
 const ranges={day:'Un día',week:'Una semana',compare:'Comparar semanas',month:'4 semanas',two:'2 meses',four:'4 meses'};
 function datesBetween(start,end) {
@@ -1050,8 +1115,9 @@ document.addEventListener('click',async event=>{
     case 'training-alternative': {
       const routine=routines[Number(arg)];
       if(!routine) break;
-      const alternative=day().training?.[arg]?.alternative;
-      openDialog(`<form id="training-alternative" class="stack" data-index="${esc(arg)}" data-date="${selected}">
+      const date=trainingDate(Number(arg));
+      const alternative=day(date).training?.[arg]?.alternative;
+      openDialog(`<form id="training-alternative" class="stack" data-index="${esc(arg)}" data-date="${date}">
         <h2>Registrar otro ejercicio</h2><p>Ejercicio programado: ${esc(routine[1])}.</p>
         <label>Qué ejercicio hiciste<input name="exercise" maxlength="140" value="${esc(alternative)}" required></label>
         <div class="row">${action('Cancelar','close')}<button class="primary">Guardar como realizado</button></div>
@@ -1059,21 +1125,19 @@ document.addEventListener('click',async event=>{
       break;
     }
     case 'training': {
-      const record=editDay();
+      const record=editDay(trainingDate(Number(arg)));
       (record.training??={})[arg]=!record.training?.[arg];
       update();
       break;
     }
     case 'timer': {
-      clearInterval(videoTimer);
-      const end=Date.now()+Number(arg)*1000;
-      const tick=()=>{
-        const seconds=Math.max(0,Math.ceil((end-Date.now())/1000));
-        const output=document.querySelector('#timer');
-        if(output) output.textContent='Descanso: '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
-        if(seconds===0) {clearInterval(videoTimer);speak('Terminó el descanso.');}
-      };
-      videoTimer=setInterval(tick,500);tick();
+      const index=Number(arg);
+      const routine=routines[index];
+      if(!routine) break;
+      const key=trainingDate(index)+':'+index;
+      restTimers.set(key,Date.now()+routine[4]*1000);
+      videoTimer??=setInterval(tickRestTimers,250);
+      tickRestTimers();
       break;
     }
   }
