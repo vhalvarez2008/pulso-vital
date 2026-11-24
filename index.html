@@ -408,6 +408,7 @@ function programme() {
     const items=menuTemplate(choice)[meal];
     return `<div class="meal"><h3>${meal}</h3><p>${items?.length?esc(describe(items)):'Sin programar'}</p>${action(items?.length?'Editar comida':'Añadir comida','menu-template',choice+'|'+meal)}</div>`;
   }).join('')}</div></details>`).join('')}</section>
+  <section class="card ui-card"><div class="row between"><h2>Informe de mi programa</h2>${action('Ver informe y guardar PDF','my-programme-report','','primary')}</div><p class="muted">Reúne tu resultado, tus menús, ejercicios y medidas para revisarlos con el asesor.</p></section>
   ${assessedPlanCard()}
   ${isTrialAccount()?trialProgrammeResources(state.trialAnswers||{}):''}
   ${isTrialAccount()?`<details class="card"><summary>Ver rutina de gimnasio de ejemplo</summary>${trainingSection()}</details>`:trainingSection()}`;
@@ -723,7 +724,7 @@ function trialResult(answers) {
     </div><section class="empty"><h3>Tu punto de partida</h3><p>Elegiste empezar por <strong>${esc(answers.firstChange.toLocaleLowerCase('es-EC'))}</strong>. En la revisión con tu asesor, pueden acordar un primer paso que encaje con tus horarios, gustos y limitaciones.</p></section>`:''}
     <p class="muted">Puedes compartir este resumen con tu asesor para revisar qué opciones se adaptan a ti.</p>
     ${isTrialAccount()?`<p class="pill">${esc(trialAccessText())}</p>`:''}
-    <div class="row">${isTrialAccount()?((trialAccess()?action('Empezar','trial-enter','','primary')+action('Ver mi programa','trial-open-program'):'')+action('Repetir test','trial-restart')) : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
+    <div class="row">${isTrialAccount()?(action('Ver informe y guardar PDF','my-programme-report')+(trialAccess()?action('Empezar','trial-enter','','primary')+action('Ver mi programa','trial-open-program'):'')+action('Repetir test','trial-restart')) : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
   </section>`;
 }
 function parseTrialHeight(input) {
@@ -1059,6 +1060,50 @@ function showClientReport(id,first) {
   <div class="fields"><label>Desde<input name="start" type="date" required value="${esc(first)}"></label>
   <label>Hasta<input name="end" type="date" required value="${esc(shift(first,6))}"></label></div>
   <div class="row">${action('Cancelar','close')}<button class="primary">Ver informe</button></div></form>`);
+}
+function showMyProgrammeReport() {
+  const first=monday(selected);
+  const dates=datesBetween(first,shift(first,6));
+  const answers=state.trialAnswers;
+  const measuredAt=Object.keys(state.days).sort().reverse().find(key=>Object.values(day(key).measures||{}).some(value=>value!=null));
+  const weightAt=Object.keys(state.days).sort().reverse().find(key=>day(key).weight!=null);
+  const testWeight=answers?.completed?Number(answers.weight)*(answers.unit==='lb'?.45359237:1):null;
+  const testBmi=answers?.age>=20?testWeight*10000/Number(answers.height)**2:null;
+  const evaluationBmi=adultBmi(state.profile.born,state.assessment?.weight,state.profile.height);
+  const bmi=testBmi!=null?{value:testBmi,category:bmiBand(testBmi)?.title}:evaluationBmi;
+  const guidance=state.assessedPlan;
+  const name=state.profile.name||client?.name||'Mi registro';
+  const choices=[...new Set(dates.map(key=>menuChoice(key)).filter(Boolean))];
+  const menuKeys=choices.length?choices:Object.keys(menus);
+  const measurements=measuredAt?Object.entries(day(measuredAt).measures||{}).filter(([,value])=>value!=null):[];
+  openDialog(`<div id="client-report-print" class="stack"><div class="row report-controls">${action('Guardar PDF','my-programme-print','','primary')}${action('Cerrar','close')}</div>
+    <article id="my-programme-document"><h2>Pulso Vital · Mi programa</h2><p><strong>${esc(name)}</strong> · ${esc(pretty(first))} a ${esc(pretty(dates.at(-1)))}</p>
+    ${isTrialAccount()?`<p>${esc(trialAccessText())}</p>`:''}
+    <section class="report-day"><h3>Resultado y punto de partida</h3>
+      ${bmi?.value!=null?`<p><strong>IMC: ${format(bmi.value)} kg/m² · ${esc(bmi.category)}</strong>. Indicador inicial para adultos.</p>`:'<p>Sin resultado de IMC para adultos registrado.</p>'}
+      ${answers?.completed?`<p>Objetivo: ${esc(answers.goal)} · Disponibilidad: ${esc(answers.time)} · Lugar: ${esc(answers.activity)}.</p>`:
+      state.profile.objective?`<p>Objetivo: ${esc(state.profile.objective)}</p>`:''}
+    </section>
+    <section class="report-day"><h3>Medidas y peso</h3>
+      ${weightAt?`<p>Último peso registrado: ${format(day(weightAt).weight)} kg · ${esc(pretty(weightAt))}.</p>`:
+      testWeight!=null?`<p>Peso declarado en el test: ${format(testWeight)} kg.</p>`:'<p>Sin pesaje registrado.</p>'}
+      ${measurements.length?`<p>Medidas del ${esc(pretty(measuredAt))}</p><ul>${measurements.map(([label,value])=>`<li>${esc(label)}: ${format(value)} cm</li>`).join('')}</ul>`:'<p>Todavía no hay medidas corporales guardadas.</p>'}
+    </section>
+    <section class="report-day"><h3>Indicaciones del asesor</h3>
+      ${guidance?.date&&[guidance.food,guidance.drinks,guidance.movement,guidance.video].some(Boolean)?`
+      ${guidance.food?`<h4>Alimentación y porciones</h4><p class="assessment-text">${esc(guidance.food)}</p>`:''}
+      ${guidance.drinks?`<h4>Bebidas y alimentos que conviene limitar</h4><p class="assessment-text">${esc(guidance.drinks)}</p>`:''}
+      ${guidance.movement?`<h4>Ejercicios y alternativas</h4><p class="assessment-text">${esc(guidance.movement)}</p>`:''}
+      ${guidance.video?.startsWith('https://')?`<a href="${esc(guidance.video)}" target="_blank" rel="noopener noreferrer">Video indicado por el asesor</a>`:''}
+      `:'<p>El asesor aún no ha publicado indicaciones personalizadas. Los menús y la rutina de abajo son de referencia.</p>'}
+    </section>
+    <section class="report-day"><h3>Menús del programa</h3>
+      ${choices.length?`<p>${dates.filter(key=>menuChoice(key)).map(key=>esc(pretty(key))+': menú '+esc(menuChoice(key))).join(' · ')}</p>`:'<p>Sin menú elegido para esta semana. A continuación se muestran las opciones de ejemplo.</p>'}
+      ${menuKeys.map(choice=>`<h4>Menú ${esc(choice)}</h4><ul>${Object.entries(menuTemplate(choice)).map(([meal,items])=>`<li><strong>${esc(meal)}</strong> · ${esc(describe(items))}</li>`).join('')}</ul>`).join('')}
+    </section>
+    <section class="report-day"><h3>Entrenamiento de referencia</h3>
+      ${routines.slice(0,3).map(([title])=>`<h4>${esc(title)}</h4><ul>${routines.filter(row=>row[0]===title).map(([,exercise,sets,reps,rest,url])=>`<li>${esc(exercise)} · ${sets} series de ${reps} · descanso ${restLabel(rest)} · <a href="${esc(url)}">Ver video</a></li>`).join('')}</ul>`).join('')}
+    </section></article></div>`);
 }
 function clientReport(id,start,end) {
   if(account?.role!=='admin') return;
@@ -1685,7 +1730,7 @@ document.addEventListener('click',async event=>{
     button.setAttribute('aria-pressed',String(visible));
     return;
   }
-  if(!account || (trialTestOnly()&&!['logout','logout-confirm','close','trial-back','trial-restart','trial-open-program','trial-enter'].includes(command))) return;
+  if(!account || (trialTestOnly()&&!['logout','logout-confirm','close','trial-back','trial-restart','trial-open-program','trial-enter','my-programme-report','my-programme-print'].includes(command))) return;
   switch(command) {
     case 'trial-back':trialStep=Math.max(0,trialStep-1);render();break;
     case 'trial-restart':
@@ -1751,6 +1796,8 @@ document.addEventListener('click',async event=>{
     case 'report-day':selected=arg;reportRange='day';render();window.scrollTo(0,0);break;
     case 'open-sample-day':selected=arg;page='Hoy';render();window.scrollTo(0,0);break;
     case 'client-report':showClientReport(...arg.split('|'));break;
+    case 'my-programme-report':showMyProgrammeReport();break;
+    case 'my-programme-print':if(dialog.querySelector('#my-programme-document')) window.print();break;
     case 'report-print':if(account.role==='admin'&&dialog.querySelector('#client-report-print')) window.print();break;
     case 'client-tracking':openClientTracking(...arg.split('|'));break;
     case 'sample-week':openSampleWeek(arg);break;
