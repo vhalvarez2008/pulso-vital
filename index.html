@@ -477,15 +477,18 @@ function dictationField(label, control) {
 }
 const noteTypes = ['Observación general','Entrenamiento','Alimentación','Cambio de plan'];
 const noteTypeOptions = selectedType => noteTypes.map(type=>`<option ${type===selectedType?'selected':''}>${type}</option>`).join('');
+function advisorNotes() {
+  return `<section class="card"><form id="note" class="stack"><h2>Notas y cambios del plan</h2><small>Bitácora privada del asesor. Anota qué se ajustó, el motivo y qué revisar en la próxima consulta.</small><label>Tipo<select name="type">${noteTypeOptions()}</select></label>
+  ${dictationField('Nota o cambio','<textarea name="text" required></textarea>')}${dictationField('Motivo o próximo paso','<input name="reason">')}<button class="primary">Añadir al historial</button></form>
+  ${state.notes.map((entry,index)=>`<div class="meal"><h3>${esc(entry.type)} · ${esc(entry.date)}</h3><p>${esc(entry.text)}</p><small>${esc(entry.reason)}</small><div class="row meal-buttons">${action('Editar','note-edit',index)}${action('Eliminar','note-delete',index)}</div></div>`).join('')}</section>`;
+}
 function profile() {
   const fields = {'name':'Nombre','born':'Fecha de nacimiento','height':'Estatura (cm)','sleep':'Horas de sueño','objective':'Objetivo y motivación','health':'Condiciones y medicamentos reportados','habits':'Comidas habituales, snacks y obstáculos'};
   return `${sectionBanner('profile','Ficha de seguimiento','Guarda tu punto de partida y ajusta tus recordatorios.','Persona tomando notas en un diario')}<section class="card"><form id="profile" class="stack"><h2>Evaluación inicial</h2>
   <div class="fields">${Object.entries(fields).map(([key,label])=>['objective','health','habits'].includes(key)
     ? dictationField(label,`<textarea name="${key}" rows="3">${esc(state.profile[key])}</textarea>`)
     : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
-  <section class="card"><form id="note" class="stack"><h2>Notas y cambios del plan</h2><small>Registro del asesor en esta prueba local.</small><label>Tipo<select name="type">${noteTypeOptions()}</select></label>
-  ${dictationField('Nota o cambio','<textarea name="text" required></textarea>')}${dictationField('Motivo o próximo paso','<input name="reason">')}<button class="primary">Añadir al historial</button></form>
-  ${state.notes.map((entry,index)=>`<div class="meal"><h3>${esc(entry.type)} · ${esc(entry.date)}</h3><p>${esc(entry.text)}</p><small>${esc(entry.reason)}</small><div class="row meal-buttons">${action('Editar','note-edit',index)}${action('Eliminar','note-delete',index)}</div></div>`).join('')}</section>
+  ${account?.role==='admin'?advisorNotes():''}
   <section class="card"><form id="daily-reminder" class="stack"><h2>Mis recordatorios diarios</h2><p class="muted">Añade una hora por aviso. Puedes programar varios para el agua, tus medicamentos u otras actividades.</p>
   <label>Tipo<select name="kind"><option>Medicamento</option><option>Gotas</option><option>Agua</option><option>Otro</option></select></label>
   ${dictationField('Qué debe decir','<input name="label" required maxlength="180" placeholder="Ejemplo: tomar mi pastilla">')}
@@ -1035,6 +1038,7 @@ document.addEventListener('submit',event=>{
     }
     case 'note-edit':
     case 'note': {
+      if(account.role!=='admin') return;
       const text=data.get('text').trim();
       if(!text) return notify('Escribe una nota.');
       const note={...Object.fromEntries(data),text};
@@ -1199,6 +1203,7 @@ document.addEventListener('click',async event=>{
       break;
     }
     case 'note-edit': {
+      if(account.role!=='admin') break;
       const note=state.notes[Number(arg)];
       if(!note) break;
       openDialog(`<form id="note-edit" class="stack" data-index="${esc(arg)}"><h2>Editar nota</h2>
@@ -1209,6 +1214,7 @@ document.addEventListener('click',async event=>{
       break;
     }
     case 'note-delete': {
+      if(account.role!=='admin') break;
       const index=Number(arg);
       if(!state.notes[index] || !confirm('¿Eliminar esta nota del historial?')) break;
       state.notes.splice(index,1);
