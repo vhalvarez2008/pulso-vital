@@ -136,6 +136,7 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
 #nav[hidden],#mobile-nav[hidden]{display:none}.trial-card{max-width:540px;margin:22px auto}.trial-card progress{display:block;width:100%;height:12px;accent-color:#488762;margin:12px 0 18px}.trial-score strong{font-size:2rem}.bmi-track{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin:.65rem 0}.bmi-track span{display:block;height:12px;border-radius:4px;background:var(--band)}.bmi-track .bmi-current{outline:2px solid #263d32;outline-offset:2px}
 </style>
 <style>.trial-summary ul{padding-left:1.15rem;margin:.5rem 0}.trial-summary li{margin:.25rem 0}</style>
+<style>.trial-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:5px}.trial-choices label{min-height:37px;padding:.3rem .45rem;border-radius:8px;background:#f0f6f2;cursor:pointer}</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -634,15 +635,15 @@ const trialQuestions=[
   {key:'sport',title:'¿Qué actividad o deporte disfrutas más?',kind:'select',options:['Caminar','Bailar','Bicicleta','Entrenamiento de fuerza','Otro deporte','Aún no encuentro una actividad que me guste']},
   {key:'equipment',title:'¿Con qué cuentas para hacer actividad?',kind:'select',options:['Un espacio en casa','Bandas o pesas','Parque o sendero','Equipo de gimnasio','Todavía no cuento con un lugar o equipo']},
   {key:'mealCount',title:'¿Cuántas comidas o colaciones haces en un día habitual?',kind:'select',options:['1 o 2','3','4','5 o más','Varía bastante']},
-  {key:'favorite',title:'¿Cuál es tu comida favorita?',kind:'text',placeholder:'Por ejemplo, arroz con menestra y pollo'},
-  {key:'preferences',title:'¿Qué alimentos te gustaría conservar en tu menú?',kind:'text',placeholder:'Por ejemplo, verde, queso fresco o fruta'},
+  {key:'favorite',title:'¿Cuáles son tus comidas favoritas?',kind:'multi',options:['Arroz con menestra y pollo','Bolón de verde','Encebollado','Seco de pollo','Sopa o locro','Pescado con arroz o yuca','Ensalada con pollo','Tortilla o huevos','Avena con fruta'],placeholder:'Escribe otro plato que te guste'},
+  {key:'preferences',title:'¿Qué alimentos te gustaría conservar en tu menú?',kind:'multi',options:['Pollo','Pescado','Huevos','Carne','Fréjol o lentejas','Arroz','Verde','Papa o yuca','Avena','Frutas','Verduras','Queso fresco o yogur'],placeholder:'Escribe otro alimento que quieras conservar'},
   {key:'produce',title:'¿Con qué frecuencia comes frutas o verduras?',kind:'select',options:['Todos los días','3 a 6 días por semana','1 o 2 días por semana','Rara vez o nunca','No estoy seguro']},
   {key:'sweetDrinks',title:'¿Con qué frecuencia tomas bebidas con azúcar?',kind:'select',options:['Todos los días','3 a 6 días por semana','1 o 2 días por semana','Rara vez o nunca','No estoy seguro']},
   {key:'eatOut',title:'¿Con qué frecuencia compras comida preparada o comes fuera?',kind:'select',options:['Todos los días','3 a 6 días por semana','1 o 2 días por semana','Rara vez o nunca','Mi horario varía']},
   {key:'foodBarrier',title:'¿Qué te dificulta más organizar tus comidas?',kind:'select',options:['Falta de tiempo','Presupuesto','Trabajo por turnos','Pocas opciones donde vivo o trabajo','No sé qué preparar','Otra dificultad','Por ahora, nada']},
   {key:'foodLimit',title:'¿Hay alimentos que evitas por alergia, intolerancia u otra razón?',kind:'text',placeholder:'Puedes dejar esta respuesta en blanco'},
   {key:'sleepHours',title:'¿Cuántas horas duermes normalmente?',kind:'select',options:['Menos de 5 horas','De 5 a menos de 7 horas','De 7 a 9 horas','Más de 9 horas','Mi horario de sueño varía']},
-  {key:'healthContext',title:'¿Hay alguna condición de salud o medicación que quieras comentar?',kind:'text',placeholder:'Puedes conversarlo después con el profesional'},
+  {key:'healthContext',title:'¿Hay alguna condición de salud o medicación que quieras comentar?',kind:'multi',options:['Presión arterial alta','Diabetes o prediabetes','Problemas de tiroides','Colesterol o triglicéridos altos','Dolor o lesión que limita el movimiento','Alergia o intolerancia','Tomo medicamentos'],placeholder:'Escribe otra condición, el medicamento o un detalle si quieres'},
   {key:'firstChange',title:'¿Qué te gustaría empezar a trabajar primero?',kind:'select',options:['Organizar mis comidas','Recordar tomar agua','Moverme con más regularidad','Mejorar mis horarios de descanso','Aún no lo sé']}
 
 ];
@@ -701,12 +702,23 @@ function parseTrialHeight(input) {
   if(numeric[2]==='cm') return amount;
   return numeric[2]||amount<=3?amount*100:amount;
 }
+function trialMultiField(question,answers) {
+  const saved=answers.multiple?.[question.key];
+  const selected=saved?.choices||[];
+  const other=saved?.other??answers[question.key]??'';
+  return `<fieldset class="meal-weekdays"><legend>Marca todas las opciones que quieras</legend>
+    ${question.key==='healthContext'?'<small>Puedes dejar la pregunta en blanco si prefieres conversarlo después.</small>':''}
+    <div class="trial-choices">${question.options.map(option=>`<label class="row"><input class="check-input" type="checkbox" name="choices" value="${esc(option)}" ${selected.includes(option)?'checked':''}> ${esc(option)}</label>`).join('')}</div>
+  </fieldset><label>Otro (opcional)<input name="answer" maxlength="180" placeholder="${esc(question.placeholder)}" value="${esc(other)}"></label>`;
+}
 function trialView() {
   const answers=state.trialAnswers||{};
   if(answers.completed&&answers.firstChange&&!trialEditing) return trialResult(answers);
   const question=trialQuestions[trialStep];
   const value=answers[question.key];
-  const control=question.kind==='select'
+  const control=question.kind==='multi'
+    ? trialMultiField(question,answers)
+    : question.kind==='select'
     ? `<select name="answer" required><option value="">Elige una respuesta</option>${question.options.map(option=>`<option ${option===value?'selected':''}>${esc(option)}</option>`).join('')}</select>`
     : question.kind==='text'
       ? `<input name="answer" type="text" maxlength="180" placeholder="${esc(question.placeholder)}" value="${esc(value)}"><small>Respuesta opcional</small>`
@@ -714,7 +726,7 @@ function trialView() {
       ? `<input name="answer" type="text" inputmode="decimal" maxlength="24" required placeholder="Ejemplo: 180" value="${esc(value)}" aria-describedby="trial-height-help"><small id="trial-height-help">Escribe 180 en centímetros. También puedes escribir 1,80 o 1 metro 80.</small>`
       : `<input name="answer" type="number" inputmode="${question.key==='age'?'numeric':'decimal'}" min="${question.min}" max="${question.max}" step="${question.key==='age'?'1':'any'}" required value="${esc(value)}">`;
   return `<section class="card ui-card trial-card"><p class="pill">Test de prueba · Pregunta ${trialStep+1} de ${trialQuestions.length}</p><progress value="${trialStep+1}" max="${trialQuestions.length}" aria-label="Avance del test"></progress>
-    <form class="stack" id="trial-step"><h1>${question.title}</h1><label>${question.kind==='height'?'Centímetros (cm)':'Tu respuesta'}${control}</label>
+    <form class="stack" id="trial-step"><h1>${question.title}</h1>${question.kind==='multi'?control:`<label>${question.kind==='height'?'Centímetros (cm)':'Tu respuesta'}${control}</label>`}
     ${question.kind==='weight'?`<label>Unidad<select name="unit"><option value="kg">Kilos (kg)</option><option value="lb" ${answers.unit==='lb'?'selected':''}>Libras (lb)</option></select></label>`:''}
     <div class="row">${trialStep?action('Atrás','trial-back'):''}<button class="primary">${trialStep===trialQuestions.length-1?'Ver resultado':'Continuar'}</button></div></form></section>`;
 }
@@ -1442,12 +1454,15 @@ document.addEventListener('submit',event=>{
       if(!isTrialAccount()) return;
       const question=trialQuestions[trialStep];
       const input=data.get('answer');
-      const value=question.kind==='select'||question.kind==='text'?input.trim():question.kind==='height'?parseTrialHeight(input):Number(input);
+      const chosen=question.kind==='multi'?question.options.filter(option=>data.getAll('choices').includes(option)):null;
+      const value=chosen?[...chosen,input.trim()].filter(Boolean).join(', ')
+        :question.kind==='select'||question.kind==='text'?input.trim():question.kind==='height'?parseTrialHeight(input):Number(input);
       if(question.kind==='height'&&!(value>=30&&value<=300)) return notify('Revisa la estatura. Por ejemplo, escribe 180, 1,80 o 1 metro 80.');
       const unit=data.get('unit');
       if(question.kind==='weight'&&value*(unit==='lb'?.45359237:1)>700) return notify('Revisa el peso y la unidad ingresados.');
       const answers=(state.trialAnswers??={});
       answers[question.key]=value;
+      if(chosen) (answers.multiple??={})[question.key]={choices:chosen,other:input.trim()};
       if(question.kind==='weight') answers.unit=unit;
       if(trialStep===trialQuestions.length-1) {
         answers.completed=dateKey();
