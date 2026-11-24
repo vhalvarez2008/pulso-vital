@@ -133,6 +133,9 @@ button:hover,.button-link:hover{box-shadow:0 2px 8px #1f3f2719}
   #notice{bottom:calc(75px + env(safe-area-inset-bottom))}
 }
 </style>
+<style>
+#nav[hidden],#mobile-nav[hidden]{display:none}.trial-card{max-width:540px;margin:22px auto}.trial-card progress{display:block;width:100%;height:12px;accent-color:#488762;margin:12px 0 18px}.trial-score strong{font-size:2rem}.bmi-track{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin:.65rem 0}.bmi-track span{display:block;height:12px;border-radius:4px;background:var(--band)}.bmi-track .bmi-current{outline:2px solid #263d32;outline-offset:2px}
+</style>
 </head>
 <body>
 <section id="intro" hidden aria-label="Bienvenida"><div class="intro-content"><div class="brand-mark intro-logo" aria-hidden="true"></div><h1 id="welcome">¡Bienvenido!</h1><p class="intro-name">Pulso Vital</p><p>Cuida tu salud. Avanza a tu ritmo.</p><div class="load-track" aria-hidden="true"><div class="load-fill"></div></div></div></section>
@@ -615,8 +618,63 @@ function adultBmi(born,weight,height,asOf=dateKey()) {
   const years=Number(asOf.slice(0,4))-Number(born.slice(0,4))-(asOf.slice(5)<born.slice(5)?1:0);
   if(years<20) return {years};
   const value=kg*10000/(cm*cm);
-  const category=value<18.5?'Peso bajo':value<25?'Rango de peso saludable':value<30?'Sobrepeso':value<35?'Obesidad clase 1':value<40?'Obesidad clase 2':'Obesidad clase 3';
-  return {years,value,category};
+  return {years,value,category:bmiBand(value).title};
+}
+const trialQuestions=[
+  {key:'age',title:'¿Cuántos años tienes?',kind:'number',min:1,max:120},
+  {key:'weight',title:'¿Cuánto pesas actualmente?',kind:'weight',min:1,max:1544},
+  {key:'height',title:'¿Cuánto mides en centímetros?',kind:'number',min:30,max:300},
+  {key:'goal',title:'¿Qué te gustaría lograr?',kind:'select',options:['Bajar de peso','Mejorar mis hábitos','Moverme más','Mantener mi peso','Todavía no lo sé']},
+  {key:'work',title:'¿Cuántas horas trabajas en un día habitual?',kind:'select',options:['No trabajo actualmente','Menos de 4 horas','De 4 a 8 horas','Más de 8 horas','Mi horario varía','Prefiero no responder']},
+  {key:'time',title:'¿Cuánto tiempo tienes para moverte?',kind:'select',options:['Menos de 15 minutos al día','De 15 a 30 minutos al día','Más de 30 minutos al día','Depende del día','Aún no sé']},
+  {key:'activity',title:'¿Dónde te resulta más fácil hacer actividad?',kind:'select',options:['En casa','Al aire libre','En un gimnasio','Aún no sé']},
+  {key:'limit',title:'¿Hay algo que debamos tener en cuenta?',kind:'select',options:['Ninguna dificultad','Molestia o lesión de rodilla','Molestia de espalda','Otra limitación o condición de salud','Prefiero conversarlo con el asesor']}
+];
+const bmiBands=[
+  {upTo:18.5,title:'Peso bajo',short:'Peso bajo',color:'#bedbf0'},
+  {upTo:25,title:'Rango de peso saludable',short:'Rango saludable',color:'#bce1be'},
+  {upTo:30,title:'Sobrepeso',short:'Sobrepeso',color:'#f5dc82'},
+  {upTo:35,title:'Obesidad clase 1',short:'Clase 1',color:'#f1bd83'},
+  {upTo:40,title:'Obesidad clase 2',short:'Clase 2',color:'#efa69c'},
+  {upTo:Infinity,title:'Obesidad clase 3',short:'Clase 3',color:'#df88a3'}
+];
+const bmiBand=value=>bmiBands.find(band=>value<band.upTo);
+let trialStep=state.trialProgress||0;
+let trialEditing=trialStep>0;
+function isTrialAccount() {
+  return account?.role==='client' && client?.enrollment?.type?.startsWith('trial-');
+}
+function trialResult(answers) {
+  const kg=Number(answers.weight)*(answers.unit==='lb'?.45359237:1);
+  const value=kg*10000/Number(answers.height)**2;
+  const band=answers.age>=20?bmiBand(value):null;
+  return `<section class="card ui-card"><h1>Resultado del test</h1>
+    ${band?`<p class="trial-score"><strong>${format(value)}</strong> kg/m² · IMC</p><h2>${band.title}</h2>
+      <div class="bmi-scale" aria-label="Categorías del IMC"><div class="bmi-track" aria-hidden="true">${bmiBands.map(item=>`<span style="--band:${item.color}" class="${item===band?'bmi-current':''}"></span>`).join('')}</div>
+      <p class="muted">Tu posición en el semáforo: <strong>${band.short}</strong>.</p>
+      <details><summary>Ver todas las categorías</summary><ul>${bmiBands.map((item,index)=>`<li><strong>${item.title}</strong> · ${['Menos de 18,5','18,5 a menos de 25','25 a menos de 30','30 a menos de 35','35 a menos de 40','40 o más'][index]}</li>`).join('')}</ul></details></div>
+      ${value>=25?'<h3>Qué puedes revisar con un profesional</h3><p>En adultos, el sobrepeso y la obesidad se asocian con mayor riesgo de presión arterial alta, diabetes tipo 2, enfermedad coronaria y accidente cerebrovascular. Este resultado no calcula tu probabilidad personal de tenerlos.</p>':''}`:
+      '<p>Las categorías de este semáforo se aplican desde los 20 años. Para edades menores se utiliza una evaluación adecuada a la edad.</p>'}
+    <p>Peso ingresado: ${format(kg)} kg. El IMC usa peso y estatura. Para conocer tu grasa corporal o visceral hace falta una evaluación adicional.</p>
+    <div class="empty"><h3>Lo que contaste</h3><p><strong>Objetivo:</strong> ${esc(answers.goal)}</p>
+    <p><strong>Trabajo y tiempo:</strong> ${esc(answers.work)} · ${esc(answers.time)}</p>
+    <p><strong>Actividad:</strong> ${esc(answers.activity)} · ${esc(answers.limit)}</p></div>
+    <p class="muted">Puedes compartir este resumen con tu asesor para revisar qué opciones se adaptan a ti.</p>
+    <div class="row">${isTrialAccount()?action('Revisar mis respuestas','trial-restart') : ''}<a href="https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html" target="_blank" rel="noopener noreferrer">Referencia del IMC · CDC</a></div>
+  </section>`;
+}
+function trialView() {
+  const answers=state.trialAnswers||{};
+  if(answers.completed&&!trialEditing) return trialResult(answers);
+  const question=trialQuestions[trialStep];
+  const value=answers[question.key];
+  const control=question.kind==='select'
+    ? `<select name="answer" required><option value="">Elige una respuesta</option>${question.options.map(option=>`<option ${option===value?'selected':''}>${esc(option)}</option>`).join('')}</select>`
+    : `<input name="answer" type="number" inputmode="${question.key==='age'?'numeric':'decimal'}" min="${question.min}" max="${question.max}" step="${question.key==='age'?'1':'any'}" required value="${esc(value)}">`;
+  return `<section class="card ui-card trial-card"><p class="pill">Test de prueba · Pregunta ${trialStep+1} de ${trialQuestions.length}</p><progress value="${trialStep+1}" max="${trialQuestions.length}" aria-label="Avance del test"></progress>
+    <form class="stack" id="trial-step"><h1>${question.title}</h1><label>Tu respuesta${control}</label>
+    ${question.kind==='weight'?`<label>Unidad<select name="unit"><option value="kg">Kilos (kg)</option><option value="lb" ${answers.unit==='lb'?'selected':''}>Libras (lb)</option></select></label>`:''}
+    <div class="row">${trialStep?action('Atrás','trial-back'):''}<button class="primary">${trialStep===trialQuestions.length-1?'Ver resultado':'Continuar'}</button></div></form></section>`;
 }
 function assessmentCard() {
   const data=state.assessment||{};
@@ -658,6 +716,7 @@ function profile() {
     ? dictationField(label,`<textarea name="${key}" rows="3">${esc(state.profile[key])}</textarea>`)
     : `<label>${label}<input name="${key}" type="${key==='born'?'date':['height','sleep'].includes(key)?'number':'text'}" ${['height','sleep'].includes(key)?'min="0" step="0.1"':''} value="${esc(state.profile[key] || (key==='name' ? client?.name : ''))}"></label>`).join('')}</div><button class="primary">Guardar ficha</button></form></section>
   ${assessmentCard()}
+  ${account?.role==='admin'&&state.trialAnswers?.completed?trialResult(state.trialAnswers):''}
   ${account?.role==='admin'?assessedPlanCard(true)+advisorNotes():''}
   <section class="card ui-card accent-purple"><form id="late-checks" class="stack"><h2>Aviso de registros pendientes</h2>
   <label class="row"><input class="check-input" type="checkbox" name="enabled" ${state.lateChecks?'checked':''}> Recordarme por voz si un registro sigue pendiente después de 15 minutos</label>
@@ -1031,6 +1090,15 @@ function render() {
     activeDictation.recognition.abort();
     activeDictation=undefined;
   }
+  if(isTrialAccount()) {
+    nav.hidden=true;
+    mobileNav.hidden=true;
+    main.dataset.page='Test';
+    main.innerHTML=trialView();
+    return;
+  }
+  nav.hidden=false;
+  mobileNav.hidden=false;
   const oldPage=main.dataset.page;
   const openPanels=['Programa','Progreso','Clientes'].includes(page)&&oldPage===page
     ?new Set([...main.querySelectorAll('[data-fold][open]')].map(panel=>panel.dataset.fold))
@@ -1286,7 +1354,7 @@ document.addEventListener('submit',event=>{
     handleAccessForm(form,data);
     return;
   }
-  if(!account) return;
+  if(!account || (isTrialAccount() && form.id!=='trial-step')) return;
   switch(form.id) {
     case 'voice-preview': return speak(data.get('message'));
     case 'day-observation':
@@ -1325,6 +1393,27 @@ document.addEventListener('submit',event=>{
       history.replaceState(null,'',clientLink(item.id,'Ficha'));
       update('Ficha de '+name+' creada.');
       window.scrollTo(0,0);
+      return;
+    }
+    case 'trial-step': {
+      if(!isTrialAccount()) return;
+      const question=trialQuestions[trialStep];
+      const input=data.get('answer');
+      const value=question.kind==='select'?input:Number(input);
+      const unit=data.get('unit');
+      if(question.kind==='weight'&&value*(unit==='lb'?.45359237:1)>700) return notify('Revisa el peso y la unidad ingresados.');
+      const answers=(state.trialAnswers??={});
+      answers[question.key]=value;
+      if(question.kind==='weight') answers.unit=unit;
+      if(trialStep===trialQuestions.length-1) {
+        answers.completed=dateKey();
+        trialEditing=false;
+        delete state.trialProgress;
+      } else {
+        trialStep++;
+        state.trialProgress=trialStep;
+      }
+      if(save()) render();
       return;
     }
     case 'enrollment-edit': {
@@ -1497,8 +1586,10 @@ document.addEventListener('click',async event=>{
     button.setAttribute('aria-pressed',String(visible));
     return;
   }
-  if(!account) return;
+  if(!account || (isTrialAccount()&&!['logout','trial-back','trial-restart'].includes(command))) return;
   switch(command) {
+    case 'trial-back':trialStep=Math.max(0,trialStep-1);render();break;
+    case 'trial-restart':trialStep=0;trialEditing=true;render();break;
     case 'logout': {
       sessionStorage.removeItem(sessionKey);
       account=undefined;
@@ -1751,7 +1842,7 @@ function waterIntervalMatches(rule,time) {
 function checkReminders(){
   const now=new Date();
   const time=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  if (!account || dialog.open || !intro.hidden) return;
+  if (!account || isTrialAccount() || dialog.open || !intro.hidden) return;
   const key=dateKey(now);
   const daily=state.dailyReminders?.find(item=>item.time===time && item.lastShown!==key);
   if (daily) {
